@@ -1,0 +1,30 @@
+# Overture Maps library configuration.
+# Copy this file to overture.yaml (gitignored) and fill in your values.
+# All fields can be overridden with environment variables:
+#   OVERTURE_CITY, OVERTURE_BBOX_MIN_LON, OVERTURE_BBOX_MIN_LAT,
+#   OVERTURE_BBOX_MAX_LON, OVERTURE_BBOX_MAX_LAT,
+#   OVERTURE_DATA_RELEASE, OVERTURE_SCHEMA_VERSION
+
+city: your-city
+
+bbox:
+  min_lon: 0.0
+  min_lat: 0.0
+  max_lon: 0.0
+  max_lat: 0.0
+
+# Overture Maps release tag. Find available releases at:
+# https://github.com/OvertureMaps/data/blob/main/README.md
+data_release: "2024-11-13.0"
+
+# NOTE: schema_version is NOT embedded in the GeoParquet file metadata.
+# The 'version' field in GeoParquet metadata refers to the GeoParquet
+# specification version (e.g. 1.1.0), not the Overture Maps schema version.
+# Declare the Overture schema version manually here.
+schema_version: "1.0.0"
+
+themes:
+  - addresses
+  - places
+  - divisions
+  - transportation

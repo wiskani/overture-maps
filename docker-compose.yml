@@ -1,0 +1,15 @@
+services:
+  overture_db_test:
+    image: postgis/postgis:15-3.5-alpine
+    environment:
+      POSTGRES_DB: overture
+      POSTGRES_USER: overture
+      POSTGRES_PASSWORD: overture
+    ports:
+      - "7003:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U overture -d overture"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
