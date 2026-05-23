@@ -114,28 +114,3 @@ When upgrading to a newer Overture release, update both values in `overture.yaml
 2. Delete cached parquet files (or re-download to a fresh `data/` directory).
 3. Re-run `overture-load`.
 4. Run `overture-health` to verify the new schema is compatible.
-
----
-
-## Investigation findings
-
-### Finding A — Does the GeoParquet file embed the Overture schema_version?
-
-**No.** Inspecting the Parquet file metadata with pyarrow reveals two metadata keys:
-
-- `ARROW:schema` — the Arrow binary column schema (column names and types).
-- `geo` — the GeoParquet specification metadata. Its `version` field (e.g. `"1.1.0"`) refers to the **GeoParquet specification version**, not the Overture Maps schema version.
-
-There is no Overture-specific metadata key in the files. The `schema_version` must therefore be declared manually in `overture.yaml` alongside `data_release`.
-
-### Finding B — Is `OvertureMaps/schema` installable as a Python package?
-
-**Yes.** The repository at `https://github.com/OvertureMaps/schema` has a `pyproject.toml` at the root and is managed with `uv`. It can be installed via git URL:
-
-```
-pip install git+https://github.com/OvertureMaps/schema
-```
-
-It is a monorepo with per-theme packages (e.g. `overture-schema-places-theme`). Each package contains Pydantic v2 models for validating individual rows. The `overturemaps` package on PyPI does **not** expose schema validators — it is a data download/streaming library only.
-
-**Decision:** Row-level Pydantic validation using `OvertureMaps/schema` is supported via the `init_schema` mechanism in `load.py`. The dependency is declared as optional; if the package is not installed, validation is skipped and a warning is logged.
