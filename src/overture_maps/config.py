@@ -58,22 +58,36 @@ def load_config(path: Path | None = None) -> Config:
 
     bbox_raw = raw.get("bbox", {})
     bbox = BBox(
-        min_lon=float(os.environ.get("OVERTURE_BBOX_MIN_LON") or bbox_raw.get("min_lon", 0)),
-        min_lat=float(os.environ.get("OVERTURE_BBOX_MIN_LAT") or bbox_raw.get("min_lat", 0)),
-        max_lon=float(os.environ.get("OVERTURE_BBOX_MAX_LON") or bbox_raw.get("max_lon", 0)),
-        max_lat=float(os.environ.get("OVERTURE_BBOX_MAX_LAT") or bbox_raw.get("max_lat", 0)),
+        min_lon=float(
+            os.environ.get("OVERTURE_BBOX_MIN_LON") or bbox_raw.get("min_lon", 0)
+        ),
+        min_lat=float(
+            os.environ.get("OVERTURE_BBOX_MIN_LAT") or bbox_raw.get("min_lat", 0)
+        ),
+        max_lon=float(
+            os.environ.get("OVERTURE_BBOX_MAX_LON") or bbox_raw.get("max_lon", 0)
+        ),
+        max_lat=float(
+            os.environ.get("OVERTURE_BBOX_MAX_LAT") or bbox_raw.get("max_lat", 0)
+        ),
     )
 
-    data_release = os.environ.get("OVERTURE_DATA_RELEASE") or raw.get("data_release") or ""
+    data_release = (
+        os.environ.get("OVERTURE_DATA_RELEASE") or raw.get("data_release") or ""
+    )
     if not data_release:
         raise ValueError(
-            "data_release not configured. Set OVERTURE_DATA_RELEASE or create overture.yaml."
+            "data_release not configured. "
+            "Set OVERTURE_DATA_RELEASE or create overture.yaml."
         )
 
-    schema_version = os.environ.get("OVERTURE_SCHEMA_VERSION") or raw.get("schema_version") or ""
+    schema_version = (
+        os.environ.get("OVERTURE_SCHEMA_VERSION") or raw.get("schema_version") or ""
+    )
     if not schema_version:
         raise ValueError(
-            "schema_version not configured. Set OVERTURE_SCHEMA_VERSION or create overture.yaml."
+            "schema_version not configured. "
+            "Set OVERTURE_SCHEMA_VERSION or create overture.yaml."
         )
 
     themes = raw.get("themes", ["addresses", "places", "divisions", "transportation"])

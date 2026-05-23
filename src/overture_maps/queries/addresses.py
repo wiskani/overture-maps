@@ -27,7 +27,8 @@ async def nearby_addresses(
         raise ValueError(f"limit must be a positive integer, got {limit!r}")
 
     result = await session.execute(
-        text("""
+        text(
+            """
             SELECT
                 id, number, street, postcode, locality, country,
                 ST_AsGeoJSON(geom)::json AS geometry,
@@ -39,7 +40,8 @@ async def nearby_addresses(
             FROM reference.addresses
             ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
             LIMIT :limit
-        """),
+        """
+        ),
         {"lat": lat, "lon": lon, "limit": limit},
     )
     return [dict(row) for row in result.mappings()]

@@ -97,6 +97,17 @@ uv build
 
 The wheel is written to `dist/overture_maps-<version>-py3-none-any.whl`.
 
+## Overture Maps schema compatibility
+
+This release (`0.1.0`) was built and tested against:
+
+| Field            | Value          |
+| ---------------- | -------------- |
+| `data_release`   | `2024-11-13.0` |
+| `schema_version` | `1.0.0`        |
+
+When upgrading to a newer Overture release, update both values in `overture.yaml` and follow the steps below.
+
 ## Updating for a new Overture release
 
 1. Edit `overture.yaml`: update `data_release` and `schema_version`.

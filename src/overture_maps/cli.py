@@ -48,7 +48,11 @@ def _out(data: object) -> None:
 
 @click.command("overture-load")
 @click.option("--data-dir", default=str(_DEFAULT_DATA_DIR), show_default=True)
-@click.option("--dsn", default=None, help="Sync DSN (postgresql://...). Defaults to env OVERTURE_DB_SYNC_URL.")
+@click.option(
+    "--dsn",
+    default=None,
+    help="Sync DSN (postgresql://...). Defaults to env OVERTURE_DB_SYNC_URL.",
+)
 def load(data_dir: str, dsn: str | None) -> None:
     """Load Overture Maps GeoParquet files into PostGIS."""
     sync_dsn = dsn or os.environ.get(

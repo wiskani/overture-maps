@@ -15,9 +15,7 @@ def _validate_coords(lat: float, lon: float) -> None:
         raise ValueError(f"lon must be between -180 and 180, got {lon}")
 
 
-async def street_at_point(
-    session: AsyncSession, lat: float, lon: float
-) -> dict:
+async def street_at_point(session: AsyncSession, lat: float, lon: float) -> dict:
     """Return the street containing the given point and its bounding cross streets.
 
     Returns a dict with keys:
@@ -27,7 +25,8 @@ async def street_at_point(
     _validate_coords(lat, lon)
 
     result = await session.execute(
-        text("""
+        text(
+            """
             WITH nearest AS (
                 SELECT id, name, geom, raw
                 FROM reference.transportation_segments
@@ -36,7 +35,8 @@ async def street_at_point(
                 LIMIT 1
             ),
             connector_ids AS (
-                SELECT DISTINCT jsonb_array_elements(raw->'connectors')->>'connector_id' AS cid
+                SELECT DISTINCT
+                    jsonb_array_elements(raw->'connectors')->>'connector_id' AS cid
                 FROM nearest
                 WHERE raw->'connectors' IS NOT NULL
                   AND jsonb_typeof(raw->'connectors') = 'array'
@@ -67,7 +67,8 @@ async def street_at_point(
                 ST_AsGeoJSON(geom)::json AS geometry,
                 raw
             FROM cross_streets
-        """),
+        """
+        ),
         {"lat": lat, "lon": lon},
     )
 
@@ -90,7 +91,8 @@ async def streets_near_place(
         raise ValueError(f"limit must be a positive integer, got {limit!r}")
 
     result = await session.execute(
-        text("""
+        text(
+            """
             SELECT
                 id, name, road_class,
                 ST_AsGeoJSON(geom)::json AS geometry,
@@ -103,7 +105,8 @@ async def streets_near_place(
             WHERE name IS NOT NULL
             ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
             LIMIT :limit
-        """),
+        """
+        ),
         {"lat": lat, "lon": lon, "limit": limit},
     )
     return [dict(row) for row in result.mappings()]
@@ -119,7 +122,8 @@ async def search_streets(
         raise ValueError(f"limit must be a positive integer, got {limit!r}")
 
     result = await session.execute(
-        text("""
+        text(
+            """
             SELECT
                 id, name, road_class,
                 ST_AsGeoJSON(geom)::json AS geometry,
@@ -127,7 +131,8 @@ async def search_streets(
             FROM reference.transportation_segments
             WHERE name ILIKE :pattern
             LIMIT :limit
-        """),
+        """
+        ),
         {"pattern": f"%{q}%", "limit": limit},
     )
     return [dict(row) for row in result.mappings()]

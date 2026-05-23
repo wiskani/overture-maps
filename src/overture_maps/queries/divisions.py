@@ -35,12 +35,14 @@ async def search_divisions(
 
     # Find the most granular division_type present in the data that matches q
     types_result = await session.execute(
-        text("""
+        text(
+            """
             SELECT DISTINCT division_type
             FROM reference.divisions
             WHERE division_type IS NOT NULL
               AND name ILIKE :pattern
-        """),
+        """
+        ),
         {"pattern": f"%{q}%"},
     )
     present_types = {row[0] for row in types_result}
@@ -54,7 +56,8 @@ async def search_divisions(
     if most_granular is None:
         # No typed match — return any matching division
         result = await session.execute(
-            text("""
+            text(
+                """
                 SELECT
                     id, name, division_type, country,
                     ST_AsGeoJSON(ST_Centroid(geom))::json AS geometry,
@@ -62,12 +65,14 @@ async def search_divisions(
                 FROM reference.divisions
                 WHERE name ILIKE :pattern
                 LIMIT :limit
-            """),
+            """
+            ),
             {"pattern": f"%{q}%", "limit": limit},
         )
     else:
         result = await session.execute(
-            text("""
+            text(
+                """
                 SELECT
                     id, name, division_type, country,
                     ST_AsGeoJSON(ST_Centroid(geom))::json AS geometry,
@@ -76,7 +81,8 @@ async def search_divisions(
                 WHERE division_type = :dtype
                   AND name ILIKE :pattern
                 LIMIT :limit
-            """),
+            """
+            ),
             {"dtype": most_granular, "pattern": f"%{q}%", "limit": limit},
         )
 
@@ -86,7 +92,8 @@ async def search_divisions(
 async def streets_in_division(
     session: AsyncSession, division_id: str, q: str, limit: int = _LIMIT
 ) -> list[dict]:
-    """Return streets whose name matches q and whose geometry intersects the given division.
+    """Return streets whose name matches q and whose geometry
+    intersects the given division.
 
     Raises ValueError if division_id is not found.
     """
@@ -106,7 +113,8 @@ async def streets_in_division(
         raise ValueError(f"division_id {division_id!r} not found")
 
     result = await session.execute(
-        text("""
+        text(
+            """
             SELECT
                 ts.id, ts.name, ts.road_class,
                 ST_AsGeoJSON(ts.geom)::json AS geometry,
@@ -116,7 +124,8 @@ async def streets_in_division(
             WHERE d.id = :did
               AND ts.name ILIKE :pattern
             LIMIT :limit
-        """),
+        """
+        ),
         {"did": division_id, "pattern": f"%{q}%", "limit": limit},
     )
     return [dict(row) for row in result.mappings()]

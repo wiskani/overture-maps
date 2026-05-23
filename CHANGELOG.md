@@ -2,7 +2,10 @@
 
 ## [0.1.0] - 2026-05-23
 
+Built and tested against **Overture Maps `data_release: 2024-11-13.0` / `schema_version: 1.0.0`**.
+
 ### Added
+
 - Initial release.
 - Load Overture Maps themes (addresses, places, divisions, transportation segments and connectors) from GeoParquet files into PostGIS `reference` schema.
 - `reference.schema_meta` table populated at load time with data_release, schema_version, columns, row_count, and load_timestamp per theme.

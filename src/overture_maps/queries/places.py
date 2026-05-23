@@ -24,7 +24,8 @@ async def nearby_places(
         raise ValueError(f"limit must be a positive integer, got {limit!r}")
 
     result = await session.execute(
-        text("""
+        text(
+            """
             SELECT
                 id, name, category,
                 ST_AsGeoJSON(geom)::json AS geometry,
@@ -40,7 +41,8 @@ async def nearby_places(
                 ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography
             )
             LIMIT :limit
-        """),
+        """
+        ),
         {"lat": lat, "lon": lon, "limit": limit},
     )
     return [dict(row) for row in result.mappings()]
@@ -56,7 +58,8 @@ async def search_places(
         raise ValueError(f"limit must be a positive integer, got {limit!r}")
 
     result = await session.execute(
-        text("""
+        text(
+            """
             SELECT
                 id, name, category,
                 ST_AsGeoJSON(geom)::json AS geometry,
@@ -64,7 +67,8 @@ async def search_places(
             FROM reference.places
             WHERE name ILIKE :pattern
             LIMIT :limit
-        """),
+        """
+        ),
         {"pattern": f"%{q}%", "limit": limit},
     )
     return [dict(row) for row in result.mappings()]

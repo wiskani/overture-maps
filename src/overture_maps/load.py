@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 import logging
 import math
-
 from pathlib import Path
 
 import psycopg2
@@ -133,10 +132,14 @@ def _primary_name(names_value: object) -> str | None:
 
 
 def _raw_json(row: dict) -> str:
-    return json.dumps(_clean_nan({k: v for k, v in row.items() if k != "geometry"}), default=str)
+    return json.dumps(
+        _clean_nan({k: v for k, v in row.items() if k != "geometry"}), default=str
+    )
 
 
-def _load_places(conn: psycopg2.extensions.connection, path: Path) -> tuple[int, list[str]]:
+def _load_places(
+    conn: psycopg2.extensions.connection, path: Path
+) -> tuple[int, list[str]]:
     logger.info("Loading places from %s", path.name)
     table = pq.read_table(path)
     columns = table.schema.names
@@ -152,7 +155,15 @@ def _load_places(conn: psycopg2.extensions.connection, path: Path) -> tuple[int,
                     continue
                 cats = row.get("categories")
                 category = cats.get("primary") if isinstance(cats, dict) else None
-                batch.append((str(row["id"]), name, _safe_str(category), geom.wkt, _raw_json(row)))
+                batch.append(
+                    (
+                        str(row["id"]),
+                        name,
+                        _safe_str(category),
+                        geom.wkt,
+                        _raw_json(row),
+                    )
+                )
                 if len(batch) >= _BATCH_SIZE:
                     psycopg2.extras.execute_batch(
                         cur,
@@ -178,7 +189,9 @@ def _load_places(conn: psycopg2.extensions.connection, path: Path) -> tuple[int,
     return total, columns
 
 
-def _load_addresses(conn: psycopg2.extensions.connection, path: Path) -> tuple[int, list[str]]:
+def _load_addresses(
+    conn: psycopg2.extensions.connection, path: Path
+) -> tuple[int, list[str]]:
     logger.info("Loading addresses from %s", path.name)
     table = pq.read_table(path)
     columns = table.schema.names
@@ -204,11 +217,23 @@ def _load_addresses(conn: psycopg2.extensions.connection, path: Path) -> tuple[i
                         if isinstance(lvl, dict) and lvl.get("value"):
                             locality = str(lvl["value"])
                             break
-                batch.append((str(row["id"]), number, street, postcode, locality, country, geom.wkt, _raw_json(row)))
+                batch.append(
+                    (
+                        str(row["id"]),
+                        number,
+                        street,
+                        postcode,
+                        locality,
+                        country,
+                        geom.wkt,
+                        _raw_json(row),
+                    )
+                )
                 if len(batch) >= _BATCH_SIZE:
                     psycopg2.extras.execute_batch(
                         cur,
-                        "INSERT INTO reference.addresses(id,number,street,postcode,locality,country,geom,raw)"
+                        "INSERT INTO reference.addresses"
+                        "(id,number,street,postcode,locality,country,geom,raw)"
                         " VALUES(%s,%s,%s,%s,%s,%s,ST_GeomFromText(%s,4326),%s::jsonb)"
                         " ON CONFLICT(id) DO NOTHING",
                         batch,
@@ -220,7 +245,8 @@ def _load_addresses(conn: psycopg2.extensions.connection, path: Path) -> tuple[i
         if batch:
             psycopg2.extras.execute_batch(
                 cur,
-                "INSERT INTO reference.addresses(id,number,street,postcode,locality,country,geom,raw)"
+                "INSERT INTO reference.addresses"
+                "(id,number,street,postcode,locality,country,geom,raw)"
                 " VALUES(%s,%s,%s,%s,%s,%s,ST_GeomFromText(%s,4326),%s::jsonb)"
                 " ON CONFLICT(id) DO NOTHING",
                 batch,
@@ -230,7 +256,9 @@ def _load_addresses(conn: psycopg2.extensions.connection, path: Path) -> tuple[i
     return total, columns
 
 
-def _load_divisions(conn: psycopg2.extensions.connection, path: Path) -> tuple[int, list[str]]:
+def _load_divisions(
+    conn: psycopg2.extensions.connection, path: Path
+) -> tuple[int, list[str]]:
     logger.info("Loading divisions from %s", path.name)
     table = pq.read_table(path)
     columns = table.schema.names
@@ -244,14 +272,27 @@ def _load_divisions(conn: psycopg2.extensions.connection, path: Path) -> tuple[i
                 name = _primary_name(row.get("names"))
                 if not name:
                     continue
-                # Overture divisions use 'subtype' in older releases, 'division_type' in newer
-                division_type = _safe_str(row.get("division_type") or row.get("subtype"))
+                # Overture divisions use 'subtype' in older releases,
+                # 'division_type' in newer
+                division_type = _safe_str(
+                    row.get("division_type") or row.get("subtype")
+                )
                 country = _safe_str(row.get("country"))
-                batch.append((str(row["id"]), name, division_type, country, geom.wkt, _raw_json(row)))
+                batch.append(
+                    (
+                        str(row["id"]),
+                        name,
+                        division_type,
+                        country,
+                        geom.wkt,
+                        _raw_json(row),
+                    )
+                )
                 if len(batch) >= _BATCH_SIZE:
                     psycopg2.extras.execute_batch(
                         cur,
-                        "INSERT INTO reference.divisions(id,name,division_type,country,geom,raw)"
+                        "INSERT INTO reference.divisions"
+                        "(id,name,division_type,country,geom,raw)"
                         " VALUES(%s,%s,%s,%s,ST_GeomFromText(%s,4326),%s::jsonb)"
                         " ON CONFLICT(id) DO NOTHING",
                         batch,
@@ -263,7 +304,8 @@ def _load_divisions(conn: psycopg2.extensions.connection, path: Path) -> tuple[i
         if batch:
             psycopg2.extras.execute_batch(
                 cur,
-                "INSERT INTO reference.divisions(id,name,division_type,country,geom,raw)"
+                "INSERT INTO reference.divisions"
+                "(id,name,division_type,country,geom,raw)"
                 " VALUES(%s,%s,%s,%s,ST_GeomFromText(%s,4326),%s::jsonb)"
                 " ON CONFLICT(id) DO NOTHING",
                 batch,
@@ -273,7 +315,9 @@ def _load_divisions(conn: psycopg2.extensions.connection, path: Path) -> tuple[i
     return total, columns
 
 
-def _load_segments(conn: psycopg2.extensions.connection, path: Path) -> tuple[int, list[str]]:
+def _load_segments(
+    conn: psycopg2.extensions.connection, path: Path
+) -> tuple[int, list[str]]:
     logger.info("Loading transportation segments from %s", path.name)
     table = pq.read_table(path)
     columns = table.schema.names
@@ -288,11 +332,14 @@ def _load_segments(conn: psycopg2.extensions.connection, path: Path) -> tuple[in
                 if not name:
                     continue
                 road_class = _safe_str(row.get("class") or row.get("road_class"))
-                batch.append((str(row["id"]), name, road_class, geom.wkt, _raw_json(row)))
+                batch.append(
+                    (str(row["id"]), name, road_class, geom.wkt, _raw_json(row))
+                )
                 if len(batch) >= _BATCH_SIZE:
                     psycopg2.extras.execute_batch(
                         cur,
-                        "INSERT INTO reference.transportation_segments(id,name,road_class,geom,raw)"
+                        "INSERT INTO reference.transportation_segments"
+                        "(id,name,road_class,geom,raw)"
                         " VALUES(%s,%s,%s,ST_GeomFromText(%s,4326),%s::jsonb)"
                         " ON CONFLICT(id) DO NOTHING",
                         batch,
@@ -304,7 +351,8 @@ def _load_segments(conn: psycopg2.extensions.connection, path: Path) -> tuple[in
         if batch:
             psycopg2.extras.execute_batch(
                 cur,
-                "INSERT INTO reference.transportation_segments(id,name,road_class,geom,raw)"
+                "INSERT INTO reference.transportation_segments"
+                "(id,name,road_class,geom,raw)"
                 " VALUES(%s,%s,%s,ST_GeomFromText(%s,4326),%s::jsonb)"
                 " ON CONFLICT(id) DO NOTHING",
                 batch,
@@ -314,7 +362,9 @@ def _load_segments(conn: psycopg2.extensions.connection, path: Path) -> tuple[in
     return total, columns
 
 
-def _load_connectors(conn: psycopg2.extensions.connection, path: Path) -> tuple[int, list[str]]:
+def _load_connectors(
+    conn: psycopg2.extensions.connection, path: Path
+) -> tuple[int, list[str]]:
     logger.info("Loading transportation connectors from %s", path.name)
     table = pq.read_table(path)
     columns = table.schema.names
@@ -362,7 +412,8 @@ def _upsert_schema_meta(
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO reference.schema_meta(theme,data_release,schema_version,columns,row_count,load_timestamp)
+            INSERT INTO reference.schema_meta
+            (theme,data_release,schema_version,columns,row_count,load_timestamp)
             VALUES(%s,%s,%s,%s::jsonb,%s,NOW())
             ON CONFLICT(theme) DO UPDATE SET
                 data_release=EXCLUDED.data_release,
@@ -396,10 +447,10 @@ def load(data_dir: Path, dsn: str, config: Config, *, init_schema: bool = True) 
         conn.commit()
 
     _LOADERS = [
-        ("places",                    "places.parquet",     _load_places),
-        ("addresses",                 "addresses.parquet",  _load_addresses),
-        ("divisions",                 "divisions.parquet",  _load_divisions),
-        ("transportation_segments",   "segments.parquet",   _load_segments),
+        ("places", "places.parquet", _load_places),
+        ("addresses", "addresses.parquet", _load_addresses),
+        ("divisions", "divisions.parquet", _load_divisions),
+        ("transportation_segments", "segments.parquet", _load_segments),
         ("transportation_connectors", "connectors.parquet", _load_connectors),
     ]
 
@@ -407,11 +458,15 @@ def load(data_dir: Path, dsn: str, config: Config, *, init_schema: bool = True) 
         path = data_dir / filename
         if not path.exists():
             logger.warning("%s not found, skipping theme %s.", filename, theme)
-            _upsert_schema_meta(conn, theme, config.data_release, config.schema_version, [], 0)
+            _upsert_schema_meta(
+                conn, theme, config.data_release, config.schema_version, [], 0
+            )
             continue
         count, cols = loader_fn(conn, path)
         logger.info("  %s: %d rows loaded.", theme, count)
-        _upsert_schema_meta(conn, theme, config.data_release, config.schema_version, cols, count)
+        _upsert_schema_meta(
+            conn, theme, config.data_release, config.schema_version, cols, count
+        )
 
     conn.close()
     logger.info("Load complete.")
