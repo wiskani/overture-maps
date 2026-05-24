@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import Config
+from ..models import SchemaMeta
 
 # Columns required by the query functions — derived from the real Overture Maps schema
 _REQUIRED_COLUMNS: dict[str, list[str]] = {
@@ -80,18 +81,18 @@ async def health(session: AsyncSession, config: Config) -> dict:
 
 async def _health(session: AsyncSession, config: Config) -> dict:
     meta_result = await session.execute(
-        text(
-            """
-            SELECT theme, data_release, schema_version, row_count
-            FROM reference.schema_meta
-            """
+        select(
+            SchemaMeta.theme,
+            SchemaMeta.data_release,
+            SchemaMeta.schema_version,
+            SchemaMeta.row_count,
         )
     )
-    meta_rows = {r["theme"]: r for r in meta_result.mappings()}
+    meta_rows = {r.theme: r for r in meta_result}
 
-    data_release = next((r["data_release"] for r in meta_rows.values()), None)
-    schema_version = next((r["schema_version"] for r in meta_rows.values()), None)
-    row_counts = {theme: meta_rows[theme]["row_count"] for theme in meta_rows}
+    data_release = next((r.data_release for r in meta_rows.values()), None)
+    schema_version = next((r.schema_version for r in meta_rows.values()), None)
+    row_counts = {theme: meta_rows[theme].row_count for theme in meta_rows}
 
     drift: list[str] = []
     tables = [
@@ -106,6 +107,7 @@ async def _health(session: AsyncSession, config: Config) -> dict:
         required = _REQUIRED_COLUMNS.get(table_name, [])
         if not required:
             continue
+        # information_schema is a PostgreSQL system catalog — not an ORM model
         col_result = await session.execute(
             text(
                 """

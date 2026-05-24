@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import text
+from geoalchemy2 import Geography
+from sqlalchemy import JSON, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..models import TransportationSegment
 
 _LIMIT = 10
 
@@ -19,6 +22,8 @@ async def street_at_point(session: AsyncSession, lat: float, lon: float) -> dict
     """Return the nearest street and its cross streets for the given point."""
     _validate_coords(lat, lon)
 
+    # Uses text() because the CTE with jsonb_array_elements (set-returning function)
+    # and UNION ALL does not map cleanly to SQLAlchemy ORM.
     result = await session.execute(
         text(
             """
@@ -86,26 +91,29 @@ async def streets_near_place(
     if not isinstance(limit, int) or limit < 1:
         raise ValueError(f"limit must be a positive integer, got: {limit!r}")
 
-    result = await session.execute(
-        text(
-            """
-            SELECT
-                id, version, subtype, "class", subclass, names,
-                ST_AsGeoJSON(geom)::json AS geometry,
-                ST_Distance(
-                    geom::geography,
-                    ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography
-                ) AS distance_meters
-            FROM reference.transportation_segments
-            ORDER BY ST_Distance(
-                geom::geography,
-                ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography
-            )
-            LIMIT :limit
-            """
-        ),
-        {"lat": lat, "lon": lon, "limit": limit},
+    point = func.ST_SetSRID(func.ST_MakePoint(lon, lat), 4326)
+    geog = Geography(srid=4326)
+    distance = func.ST_Distance(
+        cast(TransportationSegment.geom, geog),
+        cast(point, geog),
     )
+
+    stmt = (
+        select(
+            TransportationSegment.id,
+            TransportationSegment.version,
+            TransportationSegment.subtype,
+            TransportationSegment.road_class.label("class"),
+            TransportationSegment.subclass,
+            TransportationSegment.names,
+            func.ST_AsGeoJSON(TransportationSegment.geom).cast(JSON).label("geometry"),
+            distance.label("distance_meters"),
+        )
+        .order_by(distance)
+        .limit(limit)
+    )
+
+    result = await session.execute(stmt)
     return [dict(row) for row in result.mappings()]
 
 
@@ -118,17 +126,19 @@ async def search_streets(
     if not isinstance(limit, int) or limit < 1:
         raise ValueError(f"limit must be a positive integer, got: {limit!r}")
 
-    result = await session.execute(
-        text(
-            """
-            SELECT
-                id, version, subtype, "class", subclass, names,
-                ST_AsGeoJSON(geom)::json AS geometry
-            FROM reference.transportation_segments
-            WHERE names->>'primary' ILIKE :pattern
-            LIMIT :limit
-            """
-        ),
-        {"pattern": f"%{q}%", "limit": limit},
+    stmt = (
+        select(
+            TransportationSegment.id,
+            TransportationSegment.version,
+            TransportationSegment.subtype,
+            TransportationSegment.road_class.label("class"),
+            TransportationSegment.subclass,
+            TransportationSegment.names,
+            func.ST_AsGeoJSON(TransportationSegment.geom).cast(JSON).label("geometry"),
+        )
+        .where(TransportationSegment.names["primary"].astext.ilike(f"%{q}%"))
+        .limit(limit)
     )
+
+    result = await session.execute(stmt)
     return [dict(row) for row in result.mappings()]

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import text
+from geoalchemy2 import Geography
+from sqlalchemy import JSON, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..models import Address
 
 _LIMIT = 10
 
@@ -26,22 +29,29 @@ async def nearby_addresses(
     if not isinstance(limit, int) or limit < 1:
         raise ValueError(f"limit must be a positive integer, got: {limit!r}")
 
-    result = await session.execute(
-        text(
-            """
-            SELECT
-                id, version, country, number, postal_city, postcode, street, unit,
-                address_levels,
-                ST_AsGeoJSON(geom)::json AS geometry,
-                ST_Distance(
-                    geom::geography,
-                    ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography
-                ) AS distance_meters
-            FROM reference.addresses
-            ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
-            LIMIT :limit
-            """
-        ),
-        {"lat": lat, "lon": lon, "limit": limit},
+    point = func.ST_SetSRID(func.ST_MakePoint(lon, lat), 4326)
+    geog = Geography(srid=4326)
+
+    stmt = (
+        select(
+            Address.id,
+            Address.version,
+            Address.country,
+            Address.number,
+            Address.postal_city,
+            Address.postcode,
+            Address.street,
+            Address.unit,
+            Address.address_levels,
+            func.ST_AsGeoJSON(Address.geom).cast(JSON).label("geometry"),
+            func.ST_Distance(
+                cast(Address.geom, geog),
+                cast(point, geog),
+            ).label("distance_meters"),
+        )
+        .order_by(Address.geom.op("<->")(point))
+        .limit(limit)
     )
+
+    result = await session.execute(stmt)
     return [dict(row) for row in result.mappings()]

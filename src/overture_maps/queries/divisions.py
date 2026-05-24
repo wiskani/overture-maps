@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from sqlalchemy import text
+from sqlalchemy import JSON, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..models import Division, TransportationSegment
 
 _LIMIT = 10
 
@@ -37,18 +39,15 @@ async def search_divisions(
     if not isinstance(limit, int) or limit < 1:
         raise ValueError(f"limit must be a positive integer, got: {limit!r}")
 
+    pattern = f"%{q}%"
+
     types_result = await session.execute(
-        text(
-            """
-            SELECT DISTINCT subtype
-            FROM reference.divisions
-            WHERE subtype IS NOT NULL
-              AND names->>'primary' ILIKE :pattern
-            """
-        ),
-        {"pattern": f"%{q}%"},
+        select(Division.subtype)
+        .where(Division.subtype.isnot(None))
+        .where(Division.names["primary"].astext.ilike(pattern))
+        .distinct()
     )
-    present_types = {row[0] for row in types_result}
+    present_types = {row.subtype for row in types_result}
 
     most_granular: str | None = None
     for st in _DIVISION_SUBTYPE_HIERARCHY:
@@ -56,38 +55,36 @@ async def search_divisions(
             most_granular = st
             break
 
+    _cols = (
+        Division.id,
+        Division.version,
+        Division.subtype,
+        Division.division_class.label("class"),
+        Division.country,
+        Division.region,
+        Division.admin_level,
+        Division.division_id,
+        Division.is_land,
+        Division.is_territorial,
+        Division.names,
+        func.ST_AsGeoJSON(func.ST_Centroid(Division.geom)).cast(JSON).label("geometry"),
+    )
+
     if most_granular is None:
-        result = await session.execute(
-            text(
-                """
-                SELECT
-                    id, version, subtype, "class", country, region, admin_level,
-                    division_id, is_land, is_territorial, names,
-                    ST_AsGeoJSON(ST_Centroid(geom))::json AS geometry
-                FROM reference.divisions
-                WHERE names->>'primary' ILIKE :pattern
-                LIMIT :limit
-                """
-            ),
-            {"pattern": f"%{q}%", "limit": limit},
+        stmt = (
+            select(*_cols)
+            .where(Division.names["primary"].astext.ilike(pattern))
+            .limit(limit)
         )
     else:
-        result = await session.execute(
-            text(
-                """
-                SELECT
-                    id, version, subtype, "class", country, region, admin_level,
-                    division_id, is_land, is_territorial, names,
-                    ST_AsGeoJSON(ST_Centroid(geom))::json AS geometry
-                FROM reference.divisions
-                WHERE subtype = :subtype
-                  AND names->>'primary' ILIKE :pattern
-                LIMIT :limit
-                """
-            ),
-            {"subtype": most_granular, "pattern": f"%{q}%", "limit": limit},
+        stmt = (
+            select(*_cols)
+            .where(Division.subtype == most_granular)
+            .where(Division.names["primary"].astext.ilike(pattern))
+            .limit(limit)
         )
 
+    result = await session.execute(stmt)
     return [dict(row) for row in result.mappings()]
 
 
@@ -106,25 +103,29 @@ async def streets_in_division(
         raise ValueError(f"limit must be a positive integer, got: {limit!r}")
 
     exists = await session.execute(
-        text("SELECT 1 FROM reference.divisions WHERE id = :did LIMIT 1"),
-        {"did": division_id},
+        select(Division.id).where(Division.id == division_id).limit(1)
     )
     if exists.fetchone() is None:
         raise ValueError(f"division_id {division_id!r} not found")
 
-    result = await session.execute(
-        text(
-            """
-            SELECT
-                ts.id, ts.version, ts.subtype, ts."class", ts.subclass, ts.names,
-                ST_AsGeoJSON(ts.geom)::json AS geometry
-            FROM reference.transportation_segments ts
-            JOIN reference.divisions d ON ST_Intersects(ts.geom, d.geom)
-            WHERE d.id = :did
-              AND ts.names->>'primary' ILIKE :pattern
-            LIMIT :limit
-            """
-        ),
-        {"did": division_id, "pattern": f"%{q}%", "limit": limit},
+    stmt = (
+        select(
+            TransportationSegment.id,
+            TransportationSegment.version,
+            TransportationSegment.subtype,
+            TransportationSegment.road_class.label("class"),
+            TransportationSegment.subclass,
+            TransportationSegment.names,
+            func.ST_AsGeoJSON(TransportationSegment.geom).cast(JSON).label("geometry"),
+        )
+        .join(
+            Division,
+            func.ST_Intersects(TransportationSegment.geom, Division.geom),
+        )
+        .where(Division.id == division_id)
+        .where(TransportationSegment.names["primary"].astext.ilike(f"%{q}%"))
+        .limit(limit)
     )
+
+    result = await session.execute(stmt)
     return [dict(row) for row in result.mappings()]

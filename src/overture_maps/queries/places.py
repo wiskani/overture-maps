@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import text
+from geoalchemy2 import Geography
+from sqlalchemy import JSON, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..models import Place
 
 _LIMIT = 10
 
@@ -23,27 +26,28 @@ async def nearby_places(
     if not isinstance(limit, int) or limit < 1:
         raise ValueError(f"limit must be a positive integer, got: {limit!r}")
 
-    result = await session.execute(
-        text(
-            """
-            SELECT
-                id, version, confidence, operating_status, basic_category,
-                names, categories, taxonomy,
-                ST_AsGeoJSON(geom)::json AS geometry,
-                ST_Distance(
-                    geom::geography,
-                    ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography
-                ) AS distance_meters
-            FROM reference.places
-            ORDER BY ST_Distance(
-                geom::geography,
-                ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography
-            )
-            LIMIT :limit
-            """
-        ),
-        {"lat": lat, "lon": lon, "limit": limit},
+    point = func.ST_SetSRID(func.ST_MakePoint(lon, lat), 4326)
+    geog = Geography(srid=4326)
+    distance = func.ST_Distance(cast(Place.geom, geog), cast(point, geog))
+
+    stmt = (
+        select(
+            Place.id,
+            Place.version,
+            Place.confidence,
+            Place.operating_status,
+            Place.basic_category,
+            Place.names,
+            Place.categories,
+            Place.taxonomy,
+            func.ST_AsGeoJSON(Place.geom).cast(JSON).label("geometry"),
+            distance.label("distance_meters"),
+        )
+        .order_by(distance)
+        .limit(limit)
     )
+
+    result = await session.execute(stmt)
     return [dict(row) for row in result.mappings()]
 
 
@@ -56,18 +60,21 @@ async def search_places(
     if not isinstance(limit, int) or limit < 1:
         raise ValueError(f"limit must be a positive integer, got: {limit!r}")
 
-    result = await session.execute(
-        text(
-            """
-            SELECT
-                id, version, confidence, operating_status, basic_category,
-                names, categories, taxonomy,
-                ST_AsGeoJSON(geom)::json AS geometry
-            FROM reference.places
-            WHERE names->>'primary' ILIKE :pattern
-            LIMIT :limit
-            """
-        ),
-        {"pattern": f"%{q}%", "limit": limit},
+    stmt = (
+        select(
+            Place.id,
+            Place.version,
+            Place.confidence,
+            Place.operating_status,
+            Place.basic_category,
+            Place.names,
+            Place.categories,
+            Place.taxonomy,
+            func.ST_AsGeoJSON(Place.geom).cast(JSON).label("geometry"),
+        )
+        .where(Place.names["primary"].astext.ilike(f"%{q}%"))
+        .limit(limit)
     )
+
+    result = await session.execute(stmt)
     return [dict(row) for row in result.mappings()]
