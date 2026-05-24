@@ -1,4 +1,4 @@
-"""Division spatial query functions."""
+"""Spatial query functions for divisions."""
 
 from __future__ import annotations
 
@@ -7,16 +7,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 _LIMIT = 10
 
-# Hierarchy from most granular to least granular (Overture Maps schema).
-# search_divisions returns the most granular type present in the data.
-_DIVISION_TYPE_HIERARCHY = [
+# DivisionSubtype hierarchy from most to least granular
+# (derived from overture.schema.divisions._common.DivisionSubtype enum)
+_DIVISION_SUBTYPE_HIERARCHY = [
     "microhood",
-    "macrohood",
     "neighborhood",
-    "localadmin",
+    "macrohood",
+    "borough",
     "locality",
+    "localadmin",
     "county",
+    "macrocounty",
     "region",
+    "macroregion",
+    "dependency",
     "country",
 ]
 
@@ -24,48 +28,46 @@ _DIVISION_TYPE_HIERARCHY = [
 async def search_divisions(
     session: AsyncSession, q: str, limit: int = _LIMIT
 ) -> list[dict]:
-    """Return the division of lowest hierarchy whose name matches the given string.
+    """Return the lowest-hierarchy division whose name matches the given string.
 
-    Filters by the most granular division_type present in the loaded data.
+    Filters by the most granular subtype present in the loaded data.
     """
     if not q or not q.strip():
         raise ValueError("q must be a non-empty string")
     if not isinstance(limit, int) or limit < 1:
-        raise ValueError(f"limit must be a positive integer, got {limit!r}")
+        raise ValueError(f"limit must be a positive integer, got: {limit!r}")
 
-    # Find the most granular division_type present in the data that matches q
     types_result = await session.execute(
         text(
             """
-            SELECT DISTINCT division_type
+            SELECT DISTINCT subtype
             FROM reference.divisions
-            WHERE division_type IS NOT NULL
-              AND name ILIKE :pattern
-        """
+            WHERE subtype IS NOT NULL
+              AND names->>'primary' ILIKE :pattern
+            """
         ),
         {"pattern": f"%{q}%"},
     )
     present_types = {row[0] for row in types_result}
 
     most_granular: str | None = None
-    for dt in _DIVISION_TYPE_HIERARCHY:
-        if dt in present_types:
-            most_granular = dt
+    for st in _DIVISION_SUBTYPE_HIERARCHY:
+        if st in present_types:
+            most_granular = st
             break
 
     if most_granular is None:
-        # No typed match — return any matching division
         result = await session.execute(
             text(
                 """
                 SELECT
-                    id, name, division_type, country,
-                    ST_AsGeoJSON(ST_Centroid(geom))::json AS geometry,
-                    raw
+                    id, version, subtype, "class", country, region, admin_level,
+                    division_id, is_land, is_territorial, names,
+                    ST_AsGeoJSON(ST_Centroid(geom))::json AS geometry
                 FROM reference.divisions
-                WHERE name ILIKE :pattern
+                WHERE names->>'primary' ILIKE :pattern
                 LIMIT :limit
-            """
+                """
             ),
             {"pattern": f"%{q}%", "limit": limit},
         )
@@ -74,16 +76,16 @@ async def search_divisions(
             text(
                 """
                 SELECT
-                    id, name, division_type, country,
-                    ST_AsGeoJSON(ST_Centroid(geom))::json AS geometry,
-                    raw
+                    id, version, subtype, "class", country, region, admin_level,
+                    division_id, is_land, is_territorial, names,
+                    ST_AsGeoJSON(ST_Centroid(geom))::json AS geometry
                 FROM reference.divisions
-                WHERE division_type = :dtype
-                  AND name ILIKE :pattern
+                WHERE subtype = :subtype
+                  AND names->>'primary' ILIKE :pattern
                 LIMIT :limit
-            """
+                """
             ),
-            {"dtype": most_granular, "pattern": f"%{q}%", "limit": limit},
+            {"subtype": most_granular, "pattern": f"%{q}%", "limit": limit},
         )
 
     return [dict(row) for row in result.mappings()]
@@ -92,8 +94,7 @@ async def search_divisions(
 async def streets_in_division(
     session: AsyncSession, division_id: str, q: str, limit: int = _LIMIT
 ) -> list[dict]:
-    """Return streets whose name matches q and whose geometry
-    intersects the given division.
+    """Return streets whose name matches q within the given division.
 
     Raises ValueError if division_id is not found.
     """
@@ -102,29 +103,27 @@ async def streets_in_division(
     if not q or not q.strip():
         raise ValueError("q must be a non-empty string")
     if not isinstance(limit, int) or limit < 1:
-        raise ValueError(f"limit must be a positive integer, got {limit!r}")
+        raise ValueError(f"limit must be a positive integer, got: {limit!r}")
 
-    # Verify division exists
-    exists_result = await session.execute(
+    exists = await session.execute(
         text("SELECT 1 FROM reference.divisions WHERE id = :did LIMIT 1"),
         {"did": division_id},
     )
-    if exists_result.fetchone() is None:
+    if exists.fetchone() is None:
         raise ValueError(f"division_id {division_id!r} not found")
 
     result = await session.execute(
         text(
             """
             SELECT
-                ts.id, ts.name, ts.road_class,
-                ST_AsGeoJSON(ts.geom)::json AS geometry,
-                ts.raw
+                ts.id, ts.version, ts.subtype, ts."class", ts.subclass, ts.names,
+                ST_AsGeoJSON(ts.geom)::json AS geometry
             FROM reference.transportation_segments ts
             JOIN reference.divisions d ON ST_Intersects(ts.geom, d.geom)
             WHERE d.id = :did
-              AND ts.name ILIKE :pattern
+              AND ts.names->>'primary' ILIKE :pattern
             LIMIT :limit
-        """
+            """
         ),
         {"did": division_id, "pattern": f"%{q}%", "limit": limit},
     )

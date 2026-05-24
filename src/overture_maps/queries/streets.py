@@ -1,4 +1,4 @@
-"""Street / transportation segment spatial query functions."""
+"""Spatial query functions for transportation segments (streets)."""
 
 from __future__ import annotations
 
@@ -10,64 +10,60 @@ _LIMIT = 10
 
 def _validate_coords(lat: float, lon: float) -> None:
     if not (-90 <= lat <= 90):
-        raise ValueError(f"lat must be between -90 and 90, got {lat}")
+        raise ValueError(f"lat must be between -90 and 90, got: {lat}")
     if not (-180 <= lon <= 180):
-        raise ValueError(f"lon must be between -180 and 180, got {lon}")
+        raise ValueError(f"lon must be between -180 and 180, got: {lon}")
 
 
 async def street_at_point(session: AsyncSession, lat: float, lon: float) -> dict:
-    """Return the street containing the given point and its bounding cross streets.
-
-    Returns a dict with keys:
-        - street: the nearest/containing segment (id, name, geometry, raw)
-        - cross_streets: list of segments sharing a connector with the main street
-    """
+    """Return the nearest street and its cross streets for the given point."""
     _validate_coords(lat, lon)
 
     result = await session.execute(
         text(
             """
             WITH nearest AS (
-                SELECT id, name, geom, raw
+                SELECT id, names, "class", subtype, connectors, geom
                 FROM reference.transportation_segments
-                WHERE name IS NOT NULL
+                WHERE names IS NOT NULL
                 ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
                 LIMIT 1
             ),
             connector_ids AS (
                 SELECT DISTINCT
-                    jsonb_array_elements(raw->'connectors')->>'connector_id' AS cid
+                    jsonb_array_elements(connectors)->>'connector_id' AS cid
                 FROM nearest
-                WHERE raw->'connectors' IS NOT NULL
-                  AND jsonb_typeof(raw->'connectors') = 'array'
+                WHERE connectors IS NOT NULL
+                  AND jsonb_typeof(connectors) = 'array'
             ),
             cross_streets AS (
-                SELECT DISTINCT ts.id, ts.name, ts.geom, ts.raw
+                SELECT DISTINCT ts.id, ts.names, ts."class", ts.subtype, ts.geom
                 FROM reference.transportation_segments ts
                 JOIN connector_ids ci ON (
-                    ts.raw->'connectors' @> jsonb_build_array(
+                    ts.connectors @> jsonb_build_array(
                         jsonb_build_object('connector_id', ci.cid)
                     )
                 )
                 WHERE ts.id != (SELECT id FROM nearest)
-                  AND ts.name IS NOT NULL
             )
             SELECT
                 'street'       AS role,
                 id,
-                name,
-                ST_AsGeoJSON(geom)::json AS geometry,
-                raw
+                names,
+                "class",
+                subtype,
+                ST_AsGeoJSON(geom)::json AS geometry
             FROM nearest
             UNION ALL
             SELECT
                 'cross_street' AS role,
                 id,
-                name,
-                ST_AsGeoJSON(geom)::json AS geometry,
-                raw
+                names,
+                "class",
+                subtype,
+                ST_AsGeoJSON(geom)::json AS geometry
             FROM cross_streets
-        """
+            """
         ),
         {"lat": lat, "lon": lon},
     )
@@ -88,24 +84,25 @@ async def streets_near_place(
     """Return the nearest streets to the given point."""
     _validate_coords(lat, lon)
     if not isinstance(limit, int) or limit < 1:
-        raise ValueError(f"limit must be a positive integer, got {limit!r}")
+        raise ValueError(f"limit must be a positive integer, got: {limit!r}")
 
     result = await session.execute(
         text(
             """
             SELECT
-                id, name, road_class,
+                id, version, subtype, "class", subclass, names,
                 ST_AsGeoJSON(geom)::json AS geometry,
                 ST_Distance(
                     geom::geography,
                     ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography
-                ) AS distance_meters,
-                raw
+                ) AS distance_meters
             FROM reference.transportation_segments
-            WHERE name IS NOT NULL
-            ORDER BY geom <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
+            ORDER BY ST_Distance(
+                geom::geography,
+                ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography
+            )
             LIMIT :limit
-        """
+            """
         ),
         {"lat": lat, "lon": lon, "limit": limit},
     )
@@ -119,19 +116,18 @@ async def search_streets(
     if not q or not q.strip():
         raise ValueError("q must be a non-empty string")
     if not isinstance(limit, int) or limit < 1:
-        raise ValueError(f"limit must be a positive integer, got {limit!r}")
+        raise ValueError(f"limit must be a positive integer, got: {limit!r}")
 
     result = await session.execute(
         text(
             """
             SELECT
-                id, name, road_class,
-                ST_AsGeoJSON(geom)::json AS geometry,
-                raw
+                id, version, subtype, "class", subclass, names,
+                ST_AsGeoJSON(geom)::json AS geometry
             FROM reference.transportation_segments
-            WHERE name ILIKE :pattern
+            WHERE names->>'primary' ILIKE :pattern
             LIMIT :limit
-        """
+            """
         ),
         {"pattern": f"%{q}%", "limit": limit},
     )

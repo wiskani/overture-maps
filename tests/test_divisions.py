@@ -40,7 +40,7 @@ async def test_search_divisions_has_required_fields(session):
     results = await search_divisions(session, "San Francisco")
     for r in results:
         assert "id" in r
-        assert "name" in r
+        assert "names" in r
         assert "geometry" in r
 
 
@@ -69,7 +69,7 @@ async def test_search_divisions_sf_county_returns_results(session):
 async def test_search_divisions_returns_most_granular(session):
     results = await search_divisions(session, "San Francisco")
     # All results should share the same (most granular) division_type
-    types = {r["division_type"] for r in results if r.get("division_type")}
+    types = {r["subtype"] for r in results if r.get("subtype")}
     assert len(types) <= 1
 
 
@@ -97,7 +97,8 @@ async def test_streets_in_division_returns_list(session, any_division_id):
 async def test_streets_in_division_results_match_query(session, any_division_id):
     results = await streets_in_division(session, any_division_id, "st")
     for r in results:
-        assert "st" in r["name"].lower()
+        primary = (r.get("names") or {}).get("primary") or ""
+        assert "st" in primary.lower()
 
 
 @pytest.mark.asyncio

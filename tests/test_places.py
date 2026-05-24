@@ -64,7 +64,8 @@ async def test_search_places_returns_results(session):
 async def test_search_places_matches_query(session):
     results = await search_places(session, "hotel")
     for r in results:
-        assert "hotel" in r["name"].lower()
+        primary = (r.get("names") or {}).get("primary") or ""
+        assert "hotel" in primary.lower()
 
 
 @pytest.mark.asyncio

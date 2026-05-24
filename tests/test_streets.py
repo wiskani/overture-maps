@@ -22,7 +22,7 @@ async def test_street_at_point_returns_dict(session):
 async def test_street_at_point_street_has_name(session):
     result = await street_at_point(session, SF_LAT, SF_LON)
     assert result["street"] is not None
-    assert result["street"]["name"] is not None
+    assert result["street"]["names"] is not None
 
 
 @pytest.mark.asyncio
@@ -72,7 +72,7 @@ async def test_streets_near_place_has_required_fields(session):
     results = await streets_near_place(session, SF_LAT, SF_LON, limit=3)
     for r in results:
         assert "id" in r
-        assert "name" in r
+        assert "names" in r
         assert "geometry" in r
         assert "distance_meters" in r
 
@@ -114,7 +114,8 @@ async def test_search_streets_returns_list(session):
 async def test_search_streets_results_match_query(session):
     results = await search_streets(session, "st")
     for r in results:
-        assert "st" in r["name"].lower()
+        primary = (r.get("names") or {}).get("primary") or ""
+        assert "st" in primary.lower()
 
 
 @pytest.mark.asyncio

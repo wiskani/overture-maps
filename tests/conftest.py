@@ -101,8 +101,6 @@ def _download_if_missing() -> None:
 def loaded_db():
     """Download both city datasets and load them into overture_db_test."""
     _download_if_missing()
-
-    # Load Cochabamba first (establishes DDL + data), then SF appended (UPSERT, no DDL reset)
     load(_DATA_DIR / "cbba", _TEST_DB_URL_SYNC, COCHABAMBA_CONFIG, init_schema=True)
     load(_DATA_DIR / "sf", _TEST_DB_URL_SYNC, SF_CONFIG, init_schema=False)
 

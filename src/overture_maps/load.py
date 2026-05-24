@@ -1,10 +1,10 @@
-"""Load Overture Maps GeoParquet files into PostGIS reference schema.
+"""Load Overture Maps GeoParquet files into the reference schema of PostGIS.
 
-Idempotent: drops and recreates tables on every run.
 Uses psycopg2 for bulk inserts (synchronous, CLI-only operation).
+Schema is initialized from the ORM models in models.py via SQLAlchemy.
 
-If the overture-schema package is installed, each row is validated against
-the official Pydantic models. Invalid rows are logged by id and skipped.
+Validates each row against the official Overture Maps Pydantic models.
+Validation errors are logged by row id without aborting the load.
 """
 
 from __future__ import annotations
@@ -13,90 +13,38 @@ import json
 import logging
 import math
 from pathlib import Path
+from typing import Any
 
 import psycopg2
 import psycopg2.extras
 import pyarrow.parquet as pq
+from overture.schema.addresses.address import Address as OvertureAddress
+from overture.schema.divisions.division_area import DivisionArea as OvertureDivisionArea
+from overture.schema.places.place import Place as OverturePlace
+from overture.schema.transportation.connector.models import (
+    Connector as OvertureConnector,
+)
+from overture.schema.transportation.segment.models import Segment as OvertureSegment
 from shapely import wkb
+from sqlalchemy import create_engine
+from sqlalchemy import text as sa_text
 
 from .config import Config
+from .models import Base
 
 logger = logging.getLogger(__name__)
 
 _BATCH_SIZE = 500
 
-_DDL = """
-CREATE EXTENSION IF NOT EXISTS postgis;
-CREATE SCHEMA IF NOT EXISTS reference;
 
-DROP TABLE IF EXISTS reference.schema_meta;
-DROP TABLE IF EXISTS reference.addresses;
-DROP TABLE IF EXISTS reference.divisions;
-DROP TABLE IF EXISTS reference.transportation_segments;
-DROP TABLE IF EXISTS reference.transportation_connectors;
-DROP TABLE IF EXISTS reference.places;
-
-CREATE TABLE reference.places (
-    id         TEXT PRIMARY KEY,
-    name       TEXT,
-    category   TEXT,
-    geom       GEOMETRY(Point, 4326),
-    raw        JSONB
-);
-
-CREATE TABLE reference.addresses (
-    id         TEXT PRIMARY KEY,
-    number     TEXT,
-    street     TEXT,
-    postcode   TEXT,
-    locality   TEXT,
-    country    TEXT,
-    geom       GEOMETRY(Point, 4326),
-    raw        JSONB
-);
-
-CREATE TABLE reference.divisions (
-    id             TEXT PRIMARY KEY,
-    name           TEXT,
-    division_type  TEXT,
-    country        TEXT,
-    geom           GEOMETRY(GEOMETRY, 4326),
-    raw            JSONB
-);
-
-CREATE TABLE reference.transportation_segments (
-    id          TEXT PRIMARY KEY,
-    name        TEXT,
-    road_class  TEXT,
-    geom        GEOMETRY(LineString, 4326),
-    raw         JSONB
-);
-
-CREATE TABLE reference.transportation_connectors (
-    id    TEXT PRIMARY KEY,
-    geom  GEOMETRY(Point, 4326),
-    raw   JSONB
-);
-
-CREATE TABLE reference.schema_meta (
-    theme           TEXT PRIMARY KEY,
-    data_release    TEXT NOT NULL,
-    schema_version  TEXT NOT NULL,
-    columns         JSONB,
-    row_count       INTEGER NOT NULL DEFAULT 0,
-    load_timestamp  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX ON reference.places                  USING GIST(geom);
-CREATE INDEX ON reference.places                  USING GIN(raw);
-CREATE INDEX ON reference.addresses               USING GIST(geom);
-CREATE INDEX ON reference.addresses               (street);
-CREATE INDEX ON reference.divisions               USING GIST(geom);
-CREATE INDEX ON reference.divisions               (division_type);
-CREATE INDEX ON reference.transportation_segments USING GIST(geom);
-CREATE INDEX ON reference.transportation_segments (name);
-CREATE INDEX ON reference.transportation_connectors USING GIST(geom);
-"""
+def _init_schema(dsn: str) -> None:
+    engine = create_engine(dsn)
+    with engine.begin() as conn:
+        conn.execute(sa_text("CREATE EXTENSION IF NOT EXISTS postgis"))
+        conn.execute(sa_text("CREATE SCHEMA IF NOT EXISTS reference"))
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    engine.dispose()
 
 
 def _connect(dsn: str) -> psycopg2.extensions.connection:
@@ -106,35 +54,94 @@ def _connect(dsn: str) -> psycopg2.extensions.connection:
     )
 
 
-def _clean_nan(obj: object) -> object:
-    if isinstance(obj, float) and not math.isfinite(obj):
-        return None
-    if isinstance(obj, dict):
-        return {k: _clean_nan(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_clean_nan(v) for v in obj]
+def _clean_numpy(obj: Any) -> Any:
+    try:
+        import numpy as np  # numpy is a transitive dependency of pandas
+
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj) if np.isfinite(obj) else None
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, np.ndarray):
+            return [_clean(v) for v in obj.tolist()]
+    except ImportError:
+        pass
     return obj
 
 
-def _safe_str(value: object) -> str | None:
-    if value is None:
+def _clean_pandas(obj: Any) -> Any:
+    try:
+        import pandas as pd
+
+        if pd.isna(obj):
+            return None
+    except (TypeError, ValueError, ImportError):
+        pass
+    return obj
+
+
+def _clean(obj: Any) -> Any:
+    """Convert numpy/pandas types to native Python and strip NaN/inf."""
+    if obj is None:
         return None
-    v = str(value).strip()
-    return v if v else None
-
-
-def _primary_name(names_value: object) -> str | None:
-    if names_value is None:
+    if isinstance(obj, float) and not math.isfinite(obj):
         return None
-    if isinstance(names_value, dict):
-        return names_value.get("primary")
-    return str(names_value)
+    if isinstance(obj, dict):
+        return {k: _clean(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_clean(v) for v in obj]
+    obj = _clean_numpy(obj)
+    return _clean_pandas(obj)
 
 
-def _raw_json(row: dict) -> str:
-    return json.dumps(
-        _clean_nan({k: v for k, v in row.items() if k != "geometry"}), default=str
+def _to_jsonb(v: Any) -> str | None:
+    v = _clean(v)
+    if v is None:
+        return None
+    return json.dumps(v, default=str)
+
+
+def _scalar(v: Any) -> Any:
+    return _clean(v)
+
+
+def _geojson(wkb_bytes: bytes) -> dict:
+    import json as _json
+
+    geom = wkb.loads(bytes(wkb_bytes))
+    return (
+        _json.loads(geom.__geo_interface__.__str__())
+        if False
+        else {
+            "type": geom.geom_type,
+            "coordinates": (
+                list(geom.__geo_interface__["coordinates"])
+                if "coordinates" in geom.__geo_interface__
+                else []
+            ),
+        }
     )
+
+
+def _validate(model_cls: type, row: dict, theme: str, type_: str, row_id: Any) -> None:
+    """Validate a row against the Overture Pydantic model and log discrepancies.
+
+    Does not interrupt the load — validation errors are data-quality signals.
+    Rows that fail validation are still inserted; only rows that fail the INSERT
+    itself (null id, invalid geometry, etc.) are skipped.
+    """
+    try:
+        validate_dict = {k: _clean(v) for k, v in row.items() if k != "geometry"}
+        validate_dict["theme"] = theme
+        validate_dict["type"] = type_
+        from shapely.geometry import mapping as _mapping
+
+        validate_dict["geometry"] = _mapping(wkb.loads(bytes(row["geometry"])))
+        model_cls.model_validate(validate_dict)
+    except Exception as exc:
+        logger.debug("Schema discrepancy id=%s: %s", row_id, exc)
 
 
 def _load_places(
@@ -145,45 +152,52 @@ def _load_places(
     columns = table.schema.names
     df = table.to_pandas()
     total = 0
+    sql = (
+        "INSERT INTO reference.places"
+        "(id,version,confidence,operating_status,basic_category,"
+        "bbox,sources,names,categories,taxonomy,"
+        "websites,emails,socials,phones,brand,addresses,geom)"
+        " VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,"
+        "%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,"
+        "%s::jsonb,ST_GeomFromText(%s,4326))"
+        " ON CONFLICT(id) DO NOTHING"
+    )
     with conn.cursor() as cur:
         batch: list = []
         for _, row in df.iterrows():
+            row_id = row.get("id")
+            _validate(OverturePlace, row, "places", "place", row_id)
             try:
                 geom = wkb.loads(bytes(row["geometry"]))
-                name = _primary_name(row.get("names"))
-                if not name:
-                    continue
-                cats = row.get("categories")
-                category = cats.get("primary") if isinstance(cats, dict) else None
                 batch.append(
                     (
-                        str(row["id"]),
-                        name,
-                        _safe_str(category),
+                        str(row_id),
+                        _scalar(row.get("version")),
+                        _scalar(row.get("confidence")),
+                        _scalar(row.get("operating_status")),
+                        _scalar(row.get("basic_category")),
+                        _to_jsonb(row.get("bbox")),
+                        _to_jsonb(row.get("sources")),
+                        _to_jsonb(row.get("names")),
+                        _to_jsonb(row.get("categories")),
+                        _to_jsonb(row.get("taxonomy")),
+                        _to_jsonb(row.get("websites")),
+                        _to_jsonb(row.get("emails")),
+                        _to_jsonb(row.get("socials")),
+                        _to_jsonb(row.get("phones")),
+                        _to_jsonb(row.get("brand")),
+                        _to_jsonb(row.get("addresses")),
                         geom.wkt,
-                        _raw_json(row),
                     )
                 )
                 if len(batch) >= _BATCH_SIZE:
-                    psycopg2.extras.execute_batch(
-                        cur,
-                        "INSERT INTO reference.places(id,name,category,geom,raw)"
-                        " VALUES(%s,%s,%s,ST_GeomFromText(%s,4326),%s::jsonb)"
-                        " ON CONFLICT(id) DO NOTHING",
-                        batch,
-                    )
+                    psycopg2.extras.execute_batch(cur, sql, batch)
                     total += len(batch)
                     batch = []
             except Exception as exc:
-                logger.warning("Skipping place row %s: %s", row.get("id"), exc)
+                logger.warning("Failed to insert place id=%s: %s", row_id, exc)
         if batch:
-            psycopg2.extras.execute_batch(
-                cur,
-                "INSERT INTO reference.places(id,name,category,geom,raw)"
-                " VALUES(%s,%s,%s,ST_GeomFromText(%s,4326),%s::jsonb)"
-                " ON CONFLICT(id) DO NOTHING",
-                batch,
-            )
+            psycopg2.extras.execute_batch(cur, sql, batch)
             total += len(batch)
     conn.commit()
     return total, columns
@@ -196,61 +210,46 @@ def _load_addresses(
     table = pq.read_table(path)
     columns = table.schema.names
     df = table.to_pandas()
-    col_set = set(df.columns)
-    street_col = next((c for c in ("street", "thoroughfare") if c in col_set), None)
     total = 0
+    sql = (
+        "INSERT INTO reference.addresses"
+        "(id,version,country,number,postal_city,postcode,street,unit,"
+        "bbox,sources,address_levels,geom)"
+        " VALUES(%s,%s,%s,%s,%s,%s,%s,%s,"
+        "%s::jsonb,%s::jsonb,%s::jsonb,ST_GeomFromText(%s,4326))"
+        " ON CONFLICT(id) DO NOTHING"
+    )
     with conn.cursor() as cur:
         batch: list = []
         for _, row in df.iterrows():
+            row_id = row.get("id")
+            _validate(OvertureAddress, row, "addresses", "address", row_id)
             try:
                 geom = wkb.loads(bytes(row["geometry"]))
-                number = _safe_str(row.get("number"))
-                street = _safe_str(row.get(street_col)) if street_col else None
-                if not street and not number:
-                    continue
-                postcode = _safe_str(row.get("postcode"))
-                country = _safe_str(row.get("country"))
-                locality: str | None = None
-                levels = row.get("address_levels")
-                if isinstance(levels, list):
-                    for lvl in levels:
-                        if isinstance(lvl, dict) and lvl.get("value"):
-                            locality = str(lvl["value"])
-                            break
                 batch.append(
                     (
-                        str(row["id"]),
-                        number,
-                        street,
-                        postcode,
-                        locality,
-                        country,
+                        str(row_id),
+                        _scalar(row.get("version")),
+                        _scalar(row.get("country")),
+                        _scalar(row.get("number")),
+                        _scalar(row.get("postal_city")),
+                        _scalar(row.get("postcode")),
+                        _scalar(row.get("street")),
+                        _scalar(row.get("unit")),
+                        _to_jsonb(row.get("bbox")),
+                        _to_jsonb(row.get("sources")),
+                        _to_jsonb(row.get("address_levels")),
                         geom.wkt,
-                        _raw_json(row),
                     )
                 )
                 if len(batch) >= _BATCH_SIZE:
-                    psycopg2.extras.execute_batch(
-                        cur,
-                        "INSERT INTO reference.addresses"
-                        "(id,number,street,postcode,locality,country,geom,raw)"
-                        " VALUES(%s,%s,%s,%s,%s,%s,ST_GeomFromText(%s,4326),%s::jsonb)"
-                        " ON CONFLICT(id) DO NOTHING",
-                        batch,
-                    )
+                    psycopg2.extras.execute_batch(cur, sql, batch)
                     total += len(batch)
                     batch = []
             except Exception as exc:
-                logger.warning("Skipping address row %s: %s", row.get("id"), exc)
+                logger.warning("Failed to insert address id=%s: %s", row_id, exc)
         if batch:
-            psycopg2.extras.execute_batch(
-                cur,
-                "INSERT INTO reference.addresses"
-                "(id,number,street,postcode,locality,country,geom,raw)"
-                " VALUES(%s,%s,%s,%s,%s,%s,ST_GeomFromText(%s,4326),%s::jsonb)"
-                " ON CONFLICT(id) DO NOTHING",
-                batch,
-            )
+            psycopg2.extras.execute_batch(cur, sql, batch)
             total += len(batch)
     conn.commit()
     return total, columns
@@ -264,52 +263,47 @@ def _load_divisions(
     columns = table.schema.names
     df = table.to_pandas()
     total = 0
+    sql = (
+        "INSERT INTO reference.divisions"
+        '(id,version,subtype,"class",is_land,is_territorial,'
+        "division_id,country,region,admin_level,bbox,sources,names,geom)"
+        " VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
+        "%s::jsonb,%s::jsonb,%s::jsonb,ST_GeomFromText(%s,4326))"
+        " ON CONFLICT(id) DO NOTHING"
+    )
     with conn.cursor() as cur:
         batch: list = []
         for _, row in df.iterrows():
+            row_id = row.get("id")
+            _validate(OvertureDivisionArea, row, "divisions", "division_area", row_id)
             try:
                 geom = wkb.loads(bytes(row["geometry"]))
-                name = _primary_name(row.get("names"))
-                if not name:
-                    continue
-                # Overture divisions use 'subtype' in older releases,
-                # 'division_type' in newer
-                division_type = _safe_str(
-                    row.get("division_type") or row.get("subtype")
-                )
-                country = _safe_str(row.get("country"))
                 batch.append(
                     (
-                        str(row["id"]),
-                        name,
-                        division_type,
-                        country,
+                        str(row_id),
+                        _scalar(row.get("version")),
+                        _scalar(row.get("subtype")),
+                        _scalar(row.get("class")),
+                        _scalar(row.get("is_land")),
+                        _scalar(row.get("is_territorial")),
+                        _scalar(row.get("division_id")),
+                        _scalar(row.get("country")),
+                        _scalar(row.get("region")),
+                        _scalar(row.get("admin_level")),
+                        _to_jsonb(row.get("bbox")),
+                        _to_jsonb(row.get("sources")),
+                        _to_jsonb(row.get("names")),
                         geom.wkt,
-                        _raw_json(row),
                     )
                 )
                 if len(batch) >= _BATCH_SIZE:
-                    psycopg2.extras.execute_batch(
-                        cur,
-                        "INSERT INTO reference.divisions"
-                        "(id,name,division_type,country,geom,raw)"
-                        " VALUES(%s,%s,%s,%s,ST_GeomFromText(%s,4326),%s::jsonb)"
-                        " ON CONFLICT(id) DO NOTHING",
-                        batch,
-                    )
+                    psycopg2.extras.execute_batch(cur, sql, batch)
                     total += len(batch)
                     batch = []
             except Exception as exc:
-                logger.warning("Skipping division row %s: %s", row.get("id"), exc)
+                logger.warning("Failed to insert division id=%s: %s", row_id, exc)
         if batch:
-            psycopg2.extras.execute_batch(
-                cur,
-                "INSERT INTO reference.divisions"
-                "(id,name,division_type,country,geom,raw)"
-                " VALUES(%s,%s,%s,%s,ST_GeomFromText(%s,4326),%s::jsonb)"
-                " ON CONFLICT(id) DO NOTHING",
-                batch,
-            )
+            psycopg2.extras.execute_batch(cur, sql, batch)
             total += len(batch)
     conn.commit()
     return total, columns
@@ -323,40 +317,60 @@ def _load_segments(
     columns = table.schema.names
     df = table.to_pandas()
     total = 0
+    sql = (
+        "INSERT INTO reference.transportation_segments"
+        '(id,version,subtype,"class",subclass,'
+        "bbox,sources,names,subclass_rules,connectors,"
+        "road_surface,road_flags,rail_flags,"
+        "width_rules,level_rules,access_restrictions,"
+        "speed_limits,prohibited_transitions,routes,destinations,geom)"
+        " VALUES(%s,%s,%s,%s,%s,"
+        "%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,"
+        "%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,"
+        "%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,"
+        "ST_GeomFromText(%s,4326))"
+        " ON CONFLICT(id) DO NOTHING"
+    )
     with conn.cursor() as cur:
         batch: list = []
         for _, row in df.iterrows():
+            row_id = row.get("id")
+            _validate(OvertureSegment, row, "transportation", "segment", row_id)
             try:
                 geom = wkb.loads(bytes(row["geometry"]))
-                name = _primary_name(row.get("names"))
-                if not name:
-                    continue
-                road_class = _safe_str(row.get("class") or row.get("road_class"))
                 batch.append(
-                    (str(row["id"]), name, road_class, geom.wkt, _raw_json(row))
+                    (
+                        str(row_id),
+                        _scalar(row.get("version")),
+                        _scalar(row.get("subtype")),
+                        _scalar(row.get("class")),
+                        _scalar(row.get("subclass")),
+                        _to_jsonb(row.get("bbox")),
+                        _to_jsonb(row.get("sources")),
+                        _to_jsonb(row.get("names")),
+                        _to_jsonb(row.get("subclass_rules")),
+                        _to_jsonb(row.get("connectors")),
+                        _to_jsonb(row.get("road_surface")),
+                        _to_jsonb(row.get("road_flags")),
+                        _to_jsonb(row.get("rail_flags")),
+                        _to_jsonb(row.get("width_rules")),
+                        _to_jsonb(row.get("level_rules")),
+                        _to_jsonb(row.get("access_restrictions")),
+                        _to_jsonb(row.get("speed_limits")),
+                        _to_jsonb(row.get("prohibited_transitions")),
+                        _to_jsonb(row.get("routes")),
+                        _to_jsonb(row.get("destinations")),
+                        geom.wkt,
+                    )
                 )
                 if len(batch) >= _BATCH_SIZE:
-                    psycopg2.extras.execute_batch(
-                        cur,
-                        "INSERT INTO reference.transportation_segments"
-                        "(id,name,road_class,geom,raw)"
-                        " VALUES(%s,%s,%s,ST_GeomFromText(%s,4326),%s::jsonb)"
-                        " ON CONFLICT(id) DO NOTHING",
-                        batch,
-                    )
+                    psycopg2.extras.execute_batch(cur, sql, batch)
                     total += len(batch)
                     batch = []
             except Exception as exc:
-                logger.warning("Skipping segment row %s: %s", row.get("id"), exc)
+                logger.warning("Failed to insert segment id=%s: %s", row_id, exc)
         if batch:
-            psycopg2.extras.execute_batch(
-                cur,
-                "INSERT INTO reference.transportation_segments"
-                "(id,name,road_class,geom,raw)"
-                " VALUES(%s,%s,%s,ST_GeomFromText(%s,4326),%s::jsonb)"
-                " ON CONFLICT(id) DO NOTHING",
-                batch,
-            )
+            psycopg2.extras.execute_batch(cur, sql, batch)
             total += len(batch)
     conn.commit()
     return total, columns
@@ -370,32 +384,35 @@ def _load_connectors(
     columns = table.schema.names
     df = table.to_pandas()
     total = 0
+    sql = (
+        "INSERT INTO reference.transportation_connectors(id,version,bbox,sources,geom)"
+        " VALUES(%s,%s,%s::jsonb,%s::jsonb,ST_GeomFromText(%s,4326))"
+        " ON CONFLICT(id) DO NOTHING"
+    )
     with conn.cursor() as cur:
         batch: list = []
         for _, row in df.iterrows():
+            row_id = row.get("id")
+            _validate(OvertureConnector, row, "transportation", "connector", row_id)
             try:
                 geom = wkb.loads(bytes(row["geometry"]))
-                batch.append((str(row["id"]), geom.wkt, _raw_json(row)))
-                if len(batch) >= _BATCH_SIZE:
-                    psycopg2.extras.execute_batch(
-                        cur,
-                        "INSERT INTO reference.transportation_connectors(id,geom,raw)"
-                        " VALUES(%s,ST_GeomFromText(%s,4326),%s::jsonb)"
-                        " ON CONFLICT(id) DO NOTHING",
-                        batch,
+                batch.append(
+                    (
+                        str(row_id),
+                        _scalar(row.get("version")),
+                        _to_jsonb(row.get("bbox")),
+                        _to_jsonb(row.get("sources")),
+                        geom.wkt,
                     )
+                )
+                if len(batch) >= _BATCH_SIZE:
+                    psycopg2.extras.execute_batch(cur, sql, batch)
                     total += len(batch)
                     batch = []
             except Exception as exc:
-                logger.warning("Skipping connector row %s: %s", row.get("id"), exc)
+                logger.warning("Failed to insert connector id=%s: %s", row_id, exc)
         if batch:
-            psycopg2.extras.execute_batch(
-                cur,
-                "INSERT INTO reference.transportation_connectors(id,geom,raw)"
-                " VALUES(%s,ST_GeomFromText(%s,4326),%s::jsonb)"
-                " ON CONFLICT(id) DO NOTHING",
-                batch,
-            )
+            psycopg2.extras.execute_batch(cur, sql, batch)
             total += len(batch)
     conn.commit()
     return total, columns
@@ -428,23 +445,19 @@ def _upsert_schema_meta(
 
 
 def load(data_dir: Path, dsn: str, config: Config, *, init_schema: bool = True) -> None:
-    """Load all themes from geoparquet files into PostGIS.
+    """Load all themes from GeoParquet files into PostGIS.
 
     Args:
         data_dir: Directory containing the downloaded .parquet files.
-        dsn: psycopg2-compatible DSN string for overture_db.
-        config: Loaded Config with data_release, schema_version, etc.
-        init_schema: When True (default), drop and recreate all tables.
-            Set to False to append data to existing tables without dropping.
+        dsn: psycopg2 DSN for overture_db.
+        config: Config with data_release, schema_version, etc.
+        init_schema: If True (default), recreates the schema before loading.
     """
+    if init_schema:
+        logger.info("Initializing reference schema...")
+        _init_schema(dsn)
     logger.info("Connecting to %s", dsn)
     conn = _connect(dsn)
-
-    if init_schema:
-        logger.info("Creating reference schema and tables...")
-        with conn.cursor() as cur:
-            cur.execute(_DDL)
-        conn.commit()
 
     _LOADERS = [
         ("places", "places.parquet", _load_places),

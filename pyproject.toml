@@ -15,6 +15,12 @@ dependencies = [
     "pyyaml>=6.0",
     "overturemaps>=0.8.0",
     "click>=8.0",
+    "overture-schema-system",
+    "overture-schema-common",
+    "overture-schema-addresses-theme",
+    "overture-schema-places-theme",
+    "overture-schema-divisions-theme",
+    "overture-schema-transportation-theme",
 ]
 
 [project.scripts]
@@ -63,6 +69,14 @@ extend-exclude = '''
 [tool.isort]
 profile = "black"
 line_length = 88
+
+[tool.uv.sources]
+overture-schema-system = { git = "https://github.com/OvertureMaps/schema", subdirectory = "packages/overture-schema-system" }
+overture-schema-common = { git = "https://github.com/OvertureMaps/schema", subdirectory = "packages/overture-schema-common" }
+overture-schema-addresses-theme = { git = "https://github.com/OvertureMaps/schema", subdirectory = "packages/overture-schema-addresses-theme" }
+overture-schema-places-theme = { git = "https://github.com/OvertureMaps/schema", subdirectory = "packages/overture-schema-places-theme" }
+overture-schema-divisions-theme = { git = "https://github.com/OvertureMaps/schema", subdirectory = "packages/overture-schema-divisions-theme" }
+overture-schema-transportation-theme = { git = "https://github.com/OvertureMaps/schema", subdirectory = "packages/overture-schema-transportation-theme" }
 
 [tool.uv]
 dev-dependencies = [

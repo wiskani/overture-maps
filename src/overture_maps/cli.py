@@ -53,14 +53,20 @@ def _out(data: object) -> None:
     default=None,
     help="Sync DSN (postgresql://...). Defaults to env OVERTURE_DB_SYNC_URL.",
 )
-def load(data_dir: str, dsn: str | None) -> None:
+@click.option(
+    "--init-schema/--no-init-schema",
+    default=True,
+    show_default=True,
+    help="Recreate the reference schema before loading.",
+)
+def load(data_dir: str, dsn: str | None, init_schema: bool) -> None:
     """Load Overture Maps GeoParquet files into PostGIS."""
     sync_dsn = dsn or os.environ.get(
         "OVERTURE_DB_SYNC_URL",
         "postgresql://overture:overture@localhost:7002/overture",
     )
     config = load_config()
-    _load(Path(data_dir), sync_dsn, config)
+    _load(Path(data_dir), sync_dsn, config, init_schema=init_schema)
 
 
 @click.command("overture-nearby-addresses")
