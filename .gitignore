@@ -8,3 +8,4 @@ build/
 *.parquet
 overture.yaml
 tests/data/
+data/
