@@ -6,8 +6,9 @@ from sqlalchemy import JSON, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Division, TransportationSegment
+from ._utils import DEFAULT_LIMIT
 
-_LIMIT = 10
+_LIMIT = DEFAULT_LIMIT
 
 # DivisionSubtype hierarchy from most to least granular
 # (derived from overture.schema.divisions._common.DivisionSubtype enum)
