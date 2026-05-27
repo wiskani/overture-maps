@@ -15,6 +15,10 @@ dependencies = [
     "pyyaml>=6.0",
     "overturemaps>=0.8.0",
     "click>=8.0",
+]
+
+[project.optional-dependencies]
+load = [
     "overture-schema-system",
     "overture-schema-common",
     "overture-schema-addresses-theme",
@@ -83,4 +87,10 @@ dev-dependencies = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "pre-commit>=4.0",
+    "overture-schema-system",
+    "overture-schema-common",
+    "overture-schema-addresses-theme",
+    "overture-schema-places-theme",
+    "overture-schema-divisions-theme",
+    "overture-schema-transportation-theme",
 ]

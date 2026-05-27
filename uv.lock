@@ -367,12 +367,6 @@ dependencies = [
     { name = "asyncpg" },
     { name = "click" },
     { name = "geoalchemy2" },
-    { name = "overture-schema-addresses-theme" },
-    { name = "overture-schema-common" },
-    { name = "overture-schema-divisions-theme" },
-    { name = "overture-schema-places-theme" },
-    { name = "overture-schema-system" },
-    { name = "overture-schema-transportation-theme" },
     { name = "overturemaps" },
     { name = "pandas" },
     { name = "psycopg2-binary" },
@@ -382,8 +376,24 @@ dependencies = [
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
 
+[package.optional-dependencies]
+load = [
+    { name = "overture-schema-addresses-theme" },
+    { name = "overture-schema-common" },
+    { name = "overture-schema-divisions-theme" },
+    { name = "overture-schema-places-theme" },
+    { name = "overture-schema-system" },
+    { name = "overture-schema-transportation-theme" },
+]
+
 [package.dev-dependencies]
 dev = [
+    { name = "overture-schema-addresses-theme" },
+    { name = "overture-schema-common" },
+    { name = "overture-schema-divisions-theme" },
+    { name = "overture-schema-places-theme" },
+    { name = "overture-schema-system" },
+    { name = "overture-schema-transportation-theme" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -394,12 +404,12 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "click", specifier = ">=8.0" },
     { name = "geoalchemy2", specifier = ">=0.15.0" },
-    { name = "overture-schema-addresses-theme", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-addresses-theme" },
-    { name = "overture-schema-common", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-common" },
-    { name = "overture-schema-divisions-theme", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-divisions-theme" },
-    { name = "overture-schema-places-theme", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-places-theme" },
-    { name = "overture-schema-system", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-system" },
-    { name = "overture-schema-transportation-theme", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-transportation-theme" },
+    { name = "overture-schema-addresses-theme", marker = "extra == 'load'", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-addresses-theme" },
+    { name = "overture-schema-common", marker = "extra == 'load'", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-common" },
+    { name = "overture-schema-divisions-theme", marker = "extra == 'load'", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-divisions-theme" },
+    { name = "overture-schema-places-theme", marker = "extra == 'load'", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-places-theme" },
+    { name = "overture-schema-system", marker = "extra == 'load'", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-system" },
+    { name = "overture-schema-transportation-theme", marker = "extra == 'load'", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-transportation-theme" },
     { name = "overturemaps", specifier = ">=0.8.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.0" },
@@ -408,9 +418,16 @@ requires-dist = [
     { name = "shapely", specifier = ">=2.0.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
 ]
+provides-extras = ["load"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "overture-schema-addresses-theme", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-addresses-theme" },
+    { name = "overture-schema-common", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-common" },
+    { name = "overture-schema-divisions-theme", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-divisions-theme" },
+    { name = "overture-schema-places-theme", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-places-theme" },
+    { name = "overture-schema-system", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-system" },
+    { name = "overture-schema-transportation-theme", git = "https://github.com/OvertureMaps/schema?subdirectory=packages%2Foverture-schema-transportation-theme" },
     { name = "pre-commit", specifier = ">=4.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.24" },

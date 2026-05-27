@@ -16,13 +16,6 @@ from typing import Any
 
 import pyarrow.parquet as pq
 from geoalchemy2.elements import WKTElement
-from overture.schema.addresses.address import Address as OvertureAddress
-from overture.schema.divisions.division_area import DivisionArea as OvertureDivisionArea
-from overture.schema.places.place import Place as OverturePlace
-from overture.schema.transportation.connector.models import (
-    Connector as OvertureConnector,
-)
-from overture.schema.transportation.segment.models import Segment as OvertureSegment
 from shapely import wkb
 from sqlalchemy import create_engine, func
 from sqlalchemy import null as sa_null
@@ -79,6 +72,35 @@ def _jsonb(v: Any) -> Any:
     return sa_null() if cleaned is None else cleaned
 
 
+def _get_schema_models() -> dict:
+    """Import Overture schema models lazily (requires overture-maps[load] extra)."""
+    try:
+        from overture.schema.addresses.address import Address as OvertureAddress
+        from overture.schema.divisions.division_area import (
+            DivisionArea as OvertureDivisionArea,
+        )
+        from overture.schema.places.place import Place as OverturePlace
+        from overture.schema.transportation.connector.models import (
+            Connector as OvertureConnector,
+        )
+        from overture.schema.transportation.segment.models import (
+            Segment as OvertureSegment,
+        )
+
+        return {
+            "address": OvertureAddress,
+            "place": OverturePlace,
+            "division_area": OvertureDivisionArea,
+            "segment": OvertureSegment,
+            "connector": OvertureConnector,
+        }
+    except ImportError:
+        raise ImportError(
+            "Schema validation requires the 'load' extra: "
+            "pip install 'overture-maps[load]'"
+        )
+
+
 def _validate(model_cls: type, row: dict, theme: str, type_: str, row_id: Any) -> None:
     """Validate a row against the Overture Pydantic model and log discrepancies.
 
@@ -108,7 +130,9 @@ def _iter_rows(path: Path):
         yield columns, {col: data[col][i] for col in columns}
 
 
-def _load_places(session: Session, path: Path) -> tuple[int, list[str]]:
+def _load_places(
+    session: Session, path: Path, model_cls: type
+) -> tuple[int, list[str]]:
     logger.info("Loading places from %s", path.name)
     columns: list[str] = []
     total = 0
@@ -116,7 +140,7 @@ def _load_places(session: Session, path: Path) -> tuple[int, list[str]]:
 
     for columns, row in _iter_rows(path):
         row_id = row.get("id")
-        _validate(OverturePlace, row, "places", "place", row_id)
+        _validate(model_cls, row, "places", "place", row_id)
         try:
             geom = wkb.loads(bytes(row["geometry"]))
             batch.append(
@@ -156,7 +180,9 @@ def _load_places(session: Session, path: Path) -> tuple[int, list[str]]:
     return total, columns
 
 
-def _load_addresses(session: Session, path: Path) -> tuple[int, list[str]]:
+def _load_addresses(
+    session: Session, path: Path, model_cls: type
+) -> tuple[int, list[str]]:
     logger.info("Loading addresses from %s", path.name)
     columns: list[str] = []
     total = 0
@@ -164,7 +190,7 @@ def _load_addresses(session: Session, path: Path) -> tuple[int, list[str]]:
 
     for columns, row in _iter_rows(path):
         row_id = row.get("id")
-        _validate(OvertureAddress, row, "addresses", "address", row_id)
+        _validate(model_cls, row, "addresses", "address", row_id)
         try:
             geom = wkb.loads(bytes(row["geometry"]))
             batch.append(
@@ -201,7 +227,9 @@ def _load_addresses(session: Session, path: Path) -> tuple[int, list[str]]:
     return total, columns
 
 
-def _load_divisions(session: Session, path: Path) -> tuple[int, list[str]]:
+def _load_divisions(
+    session: Session, path: Path, model_cls: type
+) -> tuple[int, list[str]]:
     logger.info("Loading divisions from %s", path.name)
     columns: list[str] = []
     total = 0
@@ -209,7 +237,7 @@ def _load_divisions(session: Session, path: Path) -> tuple[int, list[str]]:
 
     for columns, row in _iter_rows(path):
         row_id = row.get("id")
-        _validate(OvertureDivisionArea, row, "divisions", "division_area", row_id)
+        _validate(model_cls, row, "divisions", "division_area", row_id)
         try:
             geom = wkb.loads(bytes(row["geometry"]))
             batch.append(
@@ -248,7 +276,9 @@ def _load_divisions(session: Session, path: Path) -> tuple[int, list[str]]:
     return total, columns
 
 
-def _load_segments(session: Session, path: Path) -> tuple[int, list[str]]:
+def _load_segments(
+    session: Session, path: Path, model_cls: type
+) -> tuple[int, list[str]]:
     logger.info("Loading transportation segments from %s", path.name)
     columns: list[str] = []
     total = 0
@@ -256,7 +286,7 @@ def _load_segments(session: Session, path: Path) -> tuple[int, list[str]]:
 
     for columns, row in _iter_rows(path):
         row_id = row.get("id")
-        _validate(OvertureSegment, row, "transportation", "segment", row_id)
+        _validate(model_cls, row, "transportation", "segment", row_id)
         try:
             geom = wkb.loads(bytes(row["geometry"]))
             batch.append(
@@ -306,7 +336,9 @@ def _load_segments(session: Session, path: Path) -> tuple[int, list[str]]:
     return total, columns
 
 
-def _load_connectors(session: Session, path: Path) -> tuple[int, list[str]]:
+def _load_connectors(
+    session: Session, path: Path, model_cls: type
+) -> tuple[int, list[str]]:
     logger.info("Loading transportation connectors from %s", path.name)
     columns: list[str] = []
     total = 0
@@ -314,7 +346,7 @@ def _load_connectors(session: Session, path: Path) -> tuple[int, list[str]]:
 
     for columns, row in _iter_rows(path):
         row_id = row.get("id")
-        _validate(OvertureConnector, row, "transportation", "connector", row_id)
+        _validate(model_cls, row, "transportation", "connector", row_id)
         try:
             geom = wkb.loads(bytes(row["geometry"]))
             batch.append(
@@ -389,6 +421,8 @@ def load(data_dir: Path, dsn: str, config: Config, *, init_schema: bool = True) 
         config: Config with data_release, schema_version, etc.
         init_schema: If True (default), recreates the schema before loading.
     """
+    _schema_models = _get_schema_models()
+
     if init_schema:
         logger.info("Initializing reference schema...")
         _init_schema(dsn)
@@ -397,15 +431,20 @@ def load(data_dir: Path, dsn: str, config: Config, *, init_schema: bool = True) 
     logger.info("Connecting to %s", dsn)
 
     _LOADERS = [
-        ("places", "places.parquet", _load_places),
-        ("addresses", "addresses.parquet", _load_addresses),
-        ("divisions", "divisions.parquet", _load_divisions),
-        ("transportation_segments", "segments.parquet", _load_segments),
-        ("transportation_connectors", "connectors.parquet", _load_connectors),
+        ("places", "places.parquet", _load_places, "place"),
+        ("addresses", "addresses.parquet", _load_addresses, "address"),
+        ("divisions", "divisions.parquet", _load_divisions, "division_area"),
+        ("transportation_segments", "segments.parquet", _load_segments, "segment"),
+        (
+            "transportation_connectors",
+            "connectors.parquet",
+            _load_connectors,
+            "connector",
+        ),
     ]
 
     with Session(engine) as session:
-        for theme, filename, loader_fn in _LOADERS:
+        for theme, filename, loader_fn, model_key in _LOADERS:
             path = data_dir / filename
             if not path.exists():
                 logger.warning("%s not found, skipping theme %s.", filename, theme)
@@ -413,7 +452,7 @@ def load(data_dir: Path, dsn: str, config: Config, *, init_schema: bool = True) 
                     session, theme, config.data_release, config.schema_version, [], 0
                 )
                 continue
-            count, cols = loader_fn(session, path)
+            count, cols = loader_fn(session, path, _schema_models[model_key])
             logger.info("  %s: %d rows loaded.", theme, count)
             _upsert_schema_meta(
                 session, theme, config.data_release, config.schema_version, cols, count
