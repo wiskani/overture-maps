@@ -23,14 +23,29 @@ from .queries.streets import search_streets as _search_streets
 from .queries.streets import street_at_point as _street_at_point
 from .queries.streets import streets_near_place as _streets_near_place
 
-_DEFAULT_DATA_DIR = Path(__file__).parent.parent.parent / "data"
+_DEFAULT_DATA_DIR = Path.cwd() / "data"
 
 
 def _get_dsn() -> str:
-    return os.environ.get(
-        "OVERTURE_DB_URL",
-        "postgresql+asyncpg://overture:overture@localhost:7002/overture",
-    )
+    dsn = os.environ.get("OVERTURE_DB_URL") or load_config().db_url
+    if not dsn:
+        raise click.UsageError(
+            "Database URL not configured. "
+            "Set OVERTURE_DB_URL env var or add db_url to overture.yaml."
+        )
+    return dsn
+
+
+def _get_sync_dsn(explicit: str | None = None) -> str:
+    if explicit:
+        return explicit
+    dsn = os.environ.get("OVERTURE_DB_SYNC_URL") or load_config().db_sync_url
+    if not dsn:
+        raise click.UsageError(
+            "Sync database URL not configured. "
+            "Set OVERTURE_DB_SYNC_URL env var or add db_sync_url to overture.yaml."
+        )
+    return dsn
 
 
 def _make_session_factory(dsn: str) -> async_sessionmaker[AsyncSession]:
@@ -61,10 +76,7 @@ def _out(data: object) -> None:
 )
 def load(data_dir: str, dsn: str | None, init_schema: bool) -> None:
     """Load Overture Maps GeoParquet files into PostGIS."""
-    sync_dsn = dsn or os.environ.get(
-        "OVERTURE_DB_SYNC_URL",
-        "postgresql://overture:overture@localhost:7002/overture",
-    )
+    sync_dsn = _get_sync_dsn(dsn)
     config = load_config()
     _load(Path(data_dir), sync_dsn, config, init_schema=init_schema)
 

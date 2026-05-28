@@ -11,7 +11,7 @@ from pathlib import Path
 
 import yaml
 
-_DEFAULT_CONFIG_PATH = Path(__file__).parent.parent.parent / "overture.yaml"
+_DEFAULT_CONFIG_PATH = Path.cwd() / "overture.yaml"
 
 
 @dataclass
@@ -40,6 +40,8 @@ class Config:
     data_release: str
     schema_version: str
     themes: list[str] = field(default_factory=list)
+    db_url: str | None = None
+    db_sync_url: str | None = None
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -92,10 +94,17 @@ def load_config(path: Path | None = None) -> Config:
 
     themes = raw.get("themes", ["addresses", "places", "divisions", "transportation"])
 
+    db_url = os.environ.get("OVERTURE_DB_URL") or raw.get("db_url") or None
+    db_sync_url = (
+        os.environ.get("OVERTURE_DB_SYNC_URL") or raw.get("db_sync_url") or None
+    )
+
     return Config(
         city=city,
         bbox=bbox,
         data_release=data_release,
         schema_version=schema_version,
         themes=themes,
+        db_url=db_url,
+        db_sync_url=db_sync_url,
     )
