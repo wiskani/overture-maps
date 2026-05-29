@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from overture_maps.exceptions import OvertureValidationError
 from overture_maps.queries.places import nearby_places, search_places
 from tests.conftest import CBBA_LAT, CBBA_LON, SF_LAT, SF_LON
 
@@ -87,27 +88,27 @@ async def test_search_places_limit_respected(session):
     assert len(results) <= 2
 
 
-# --- ValueError cases ---
+# --- OvertureValidationError cases ---
 
 @pytest.mark.asyncio
 async def test_nearby_places_invalid_lat_raises(session):
-    with pytest.raises(ValueError, match="lat"):
+    with pytest.raises(OvertureValidationError, match="lat"):
         await nearby_places(session, 95.0, SF_LON)
 
 
 @pytest.mark.asyncio
 async def test_nearby_places_invalid_lon_raises(session):
-    with pytest.raises(ValueError, match="lon"):
+    with pytest.raises(OvertureValidationError, match="lon"):
         await nearby_places(session, SF_LAT, -200.0)
 
 
 @pytest.mark.asyncio
 async def test_search_places_empty_query_raises(session):
-    with pytest.raises(ValueError, match="q"):
+    with pytest.raises(OvertureValidationError, match="q"):
         await search_places(session, "")
 
 
 @pytest.mark.asyncio
 async def test_search_places_whitespace_query_raises(session):
-    with pytest.raises(ValueError, match="q"):
+    with pytest.raises(OvertureValidationError, match="q"):
         await search_places(session, "   ")

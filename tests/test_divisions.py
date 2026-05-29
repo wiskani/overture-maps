@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
+from overture_maps.exceptions import OvertureNotFoundError, OvertureValidationError
 from overture_maps.queries.divisions import search_divisions, streets_in_division
 from tests.conftest import CBBA_LAT, CBBA_LON, SF_LAT, SF_LON
 
@@ -75,7 +76,7 @@ async def test_search_divisions_returns_most_granular(session):
 
 @pytest.mark.asyncio
 async def test_search_divisions_empty_query_raises(session):
-    with pytest.raises(ValueError, match="q"):
+    with pytest.raises(OvertureValidationError, match="q"):
         await search_divisions(session, "")
 
 
@@ -116,17 +117,17 @@ async def test_streets_in_division_limit_respected(session, any_division_id):
 
 @pytest.mark.asyncio
 async def test_streets_in_division_nonexistent_raises(session):
-    with pytest.raises(ValueError, match="division_id"):
+    with pytest.raises(OvertureNotFoundError, match="division_id"):
         await streets_in_division(session, "nonexistent-id-xyz", "st")
 
 
 @pytest.mark.asyncio
 async def test_streets_in_division_empty_division_id_raises(session):
-    with pytest.raises(ValueError, match="division_id"):
+    with pytest.raises(OvertureValidationError, match="division_id"):
         await streets_in_division(session, "", "st")
 
 
 @pytest.mark.asyncio
 async def test_streets_in_division_empty_query_raises(session):
-    with pytest.raises(ValueError, match="q"):
+    with pytest.raises(OvertureValidationError, match="q"):
         await streets_in_division(session, "some-id", "")

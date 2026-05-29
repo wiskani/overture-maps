@@ -6,12 +6,14 @@ from geoalchemy2 import Geography
 from sqlalchemy import JSON, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..exceptions import OvertureValidationError
 from ..models import Address
-from ._utils import DEFAULT_LIMIT, validate_coords
+from ._utils import DEFAULT_LIMIT, handle_db_errors, validate_coords
 
 _LIMIT = DEFAULT_LIMIT
 
 
+@handle_db_errors
 async def nearby_addresses(
     session: AsyncSession, lat: float, lon: float, limit: int = _LIMIT
 ) -> list[dict]:
@@ -21,7 +23,9 @@ async def nearby_addresses(
     """
     validate_coords(lat, lon)
     if not isinstance(limit, int) or limit < 1:
-        raise ValueError(f"limit must be a positive integer, got: {limit!r}")
+        raise OvertureValidationError(
+            f"limit must be a positive integer, got: {limit!r}"
+        )
 
     point = func.ST_SetSRID(func.ST_MakePoint(lon, lat), 4326)
     geog = Geography(srid=4326)

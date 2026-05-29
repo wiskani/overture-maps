@@ -6,7 +6,9 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import Config
+from ..exceptions import OvertureConnectionError
 from ..models import SchemaMeta
+from ._utils import handle_db_errors
 
 # Columns required by the query functions — derived from the real Overture Maps schema
 _REQUIRED_COLUMNS: dict[str, list[str]] = {
@@ -72,13 +74,16 @@ async def health(session: AsyncSession, config: Config) -> dict:
     """Return connectivity status, data summary, and schema validation result.
 
     Never raises — returns connectivity: false when overture_db is unreachable.
+    Includes the error message so callers can distinguish transient failures
+    from configuration problems without inspecting exceptions.
     """
     try:
         return await _health(session, config)
-    except Exception:
-        return {"connectivity": False}
+    except OvertureConnectionError as exc:
+        return {"connectivity": False, "error": str(exc)}
 
 
+@handle_db_errors
 async def _health(session: AsyncSession, config: Config) -> dict:
     meta_result = await session.execute(
         select(

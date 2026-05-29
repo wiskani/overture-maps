@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from overture_maps.exceptions import OvertureValidationError
 from overture_maps.queries.addresses import nearby_addresses
 from tests.conftest import CBBA_LAT, CBBA_LON, SF_LAT, SF_LON
 
@@ -67,33 +68,33 @@ async def test_limit_is_respected(session):
     assert len(results) <= 2
 
 
-# --- ValueError cases ---
+# --- OvertureValidationError cases ---
 
 @pytest.mark.asyncio
 async def test_invalid_lat_too_high_raises(session):
-    with pytest.raises(ValueError, match="lat"):
+    with pytest.raises(OvertureValidationError, match="lat"):
         await nearby_addresses(session, 91.0, SF_LON)
 
 
 @pytest.mark.asyncio
 async def test_invalid_lat_too_low_raises(session):
-    with pytest.raises(ValueError, match="lat"):
+    with pytest.raises(OvertureValidationError, match="lat"):
         await nearby_addresses(session, -91.0, SF_LON)
 
 
 @pytest.mark.asyncio
 async def test_invalid_lon_too_high_raises(session):
-    with pytest.raises(ValueError, match="lon"):
+    with pytest.raises(OvertureValidationError, match="lon"):
         await nearby_addresses(session, SF_LAT, 181.0)
 
 
 @pytest.mark.asyncio
 async def test_invalid_lon_too_low_raises(session):
-    with pytest.raises(ValueError, match="lon"):
+    with pytest.raises(OvertureValidationError, match="lon"):
         await nearby_addresses(session, SF_LAT, -181.0)
 
 
 @pytest.mark.asyncio
 async def test_invalid_limit_raises(session):
-    with pytest.raises(ValueError, match="limit"):
+    with pytest.raises(OvertureValidationError, match="limit"):
         await nearby_addresses(session, SF_LAT, SF_LON, limit=0)

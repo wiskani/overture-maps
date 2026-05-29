@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.1.2] - 2026-05-28
+
+### Added
+
+- Custom exception hierarchy (`exceptions.py`): `OvertureError` (base), `OvertureConnectionError`,
+  `OvertureValidationError`, `OvertureNotFoundError`. All exceptions are exported from the top-level
+  package so callers never need to import SQLAlchemy to distinguish error categories.
+- `handle_db_errors` decorator in `queries/_utils.py` wraps `SQLAlchemyError` and `OSError`
+  (asyncpg connection failures) into `OvertureConnectionError`, applied to every public query function.
+- `health()` now includes an `"error"` field in the response when `connectivity` is `False`.
+
+### Changed
+
+- All `ValueError` raises in query functions replaced with the appropriate custom exception type.
+- `streets_in_division()` raises `OvertureNotFoundError` (instead of `ValueError`) when
+  `division_id` is not found.
+- CLI error handler unified: all commands now emit `{"error": "<ExceptionType>", "detail": "..."}` to
+  stderr with exit code 1 on any `OvertureError`.
+- `health()` now catches only `OvertureConnectionError` (instead of bare `Exception`), preventing
+  internal bugs from being silently reported as connectivity failures.
+
 ## [0.1.1] - 2026-05-27
 
 ### Fixed

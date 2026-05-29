@@ -1,6 +1,6 @@
 [project]
 name = "overture-maps"
-version = "0.1.1"
+version = "0.1.2"
 description = "Load Overture Maps data into PostGIS and expose spatial query functions"
 readme = "README.md"
 requires-python = ">=3.12"

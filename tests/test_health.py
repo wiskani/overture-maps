@@ -95,7 +95,8 @@ async def test_health_connectivity_false_when_unreachable():
     async with factory() as session:
         result = await health(session, SF_CONFIG)
 
-    assert result == {"connectivity": False}
+    assert result["connectivity"] is False
+    assert "error" in result
     await engine.dispose()
 
 

@@ -6,12 +6,14 @@ import asyncio
 import json
 import os
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import click
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from .config import load_config
+from .exceptions import OvertureError
 from .load import load as _load
 from .queries.addresses import nearby_addresses as _nearby_addresses
 from .queries.divisions import search_divisions as _search_divisions
@@ -61,6 +63,19 @@ def _out(data: object) -> None:
     click.echo(json.dumps(data, default=str, ensure_ascii=False))
 
 
+@contextmanager
+def _catch_errors():
+    """Emit a JSON error object to stderr and exit 1 on any OvertureError."""
+    try:
+        yield
+    except OvertureError as exc:
+        click.echo(
+            json.dumps({"error": type(exc).__name__, "detail": str(exc)}),
+            err=True,
+        )
+        sys.exit(1)
+
+
 @click.command("overture-load")
 @click.option("--data-dir", default=str(_DEFAULT_DATA_DIR), show_default=True)
 @click.option(
@@ -93,7 +108,8 @@ def nearby_addresses(lat: float, lon: float, limit: int) -> None:
         async with factory() as session:
             return await _nearby_addresses(session, lat, lon, limit)
 
-    _out(_run(_run_query()))
+    with _catch_errors():
+        _out(_run(_run_query()))
 
 
 @click.command("overture-street-at-point")
@@ -107,7 +123,8 @@ def street_at_point(lat: float, lon: float) -> None:
         async with factory() as session:
             return await _street_at_point(session, lat, lon)
 
-    _out(_run(_run_query()))
+    with _catch_errors():
+        _out(_run(_run_query()))
 
 
 @click.command("overture-nearby-places")
@@ -122,7 +139,8 @@ def nearby_places(lat: float, lon: float, limit: int) -> None:
         async with factory() as session:
             return await _nearby_places(session, lat, lon, limit)
 
-    _out(_run(_run_query()))
+    with _catch_errors():
+        _out(_run(_run_query()))
 
 
 @click.command("overture-search-places")
@@ -136,7 +154,8 @@ def search_places(q: str, limit: int) -> None:
         async with factory() as session:
             return await _search_places(session, q, limit)
 
-    _out(_run(_run_query()))
+    with _catch_errors():
+        _out(_run(_run_query()))
 
 
 @click.command("overture-streets-near-place")
@@ -151,7 +170,8 @@ def streets_near_place(lat: float, lon: float, limit: int) -> None:
         async with factory() as session:
             return await _streets_near_place(session, lat, lon, limit)
 
-    _out(_run(_run_query()))
+    with _catch_errors():
+        _out(_run(_run_query()))
 
 
 @click.command("overture-search-streets")
@@ -165,7 +185,8 @@ def search_streets(q: str, limit: int) -> None:
         async with factory() as session:
             return await _search_streets(session, q, limit)
 
-    _out(_run(_run_query()))
+    with _catch_errors():
+        _out(_run(_run_query()))
 
 
 @click.command("overture-search-divisions")
@@ -179,7 +200,8 @@ def search_divisions(q: str, limit: int) -> None:
         async with factory() as session:
             return await _search_divisions(session, q, limit)
 
-    _out(_run(_run_query()))
+    with _catch_errors():
+        _out(_run(_run_query()))
 
 
 @click.command("overture-streets-in-division")
@@ -194,11 +216,8 @@ def streets_in_division(division_id: str, q: str, limit: int) -> None:
         async with factory() as session:
             return await _streets_in_division(session, division_id, q, limit)
 
-    try:
+    with _catch_errors():
         _out(_run(_run_query()))
-    except ValueError as exc:
-        click.echo(json.dumps({"error": str(exc)}), err=True)
-        sys.exit(1)
 
 
 @click.command("overture-health")

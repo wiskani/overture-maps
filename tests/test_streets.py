@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from overture_maps.exceptions import OvertureValidationError
 from overture_maps.queries.streets import search_streets, street_at_point, streets_near_place
 from tests.conftest import CBBA_LAT, CBBA_LON, SF_LAT, SF_LON
 
@@ -48,13 +49,13 @@ async def test_street_at_point_cbba_returns_street(session):
 
 @pytest.mark.asyncio
 async def test_street_at_point_invalid_lat_raises(session):
-    with pytest.raises(ValueError, match="lat"):
+    with pytest.raises(OvertureValidationError, match="lat"):
         await street_at_point(session, 200.0, SF_LON)
 
 
 @pytest.mark.asyncio
 async def test_street_at_point_invalid_lon_raises(session):
-    with pytest.raises(ValueError, match="lon"):
+    with pytest.raises(OvertureValidationError, match="lon"):
         await street_at_point(session, SF_LAT, 200.0)
 
 
@@ -98,7 +99,7 @@ async def test_streets_near_place_limit_respected(session):
 
 @pytest.mark.asyncio
 async def test_streets_near_place_invalid_lat_raises(session):
-    with pytest.raises(ValueError, match="lat"):
+    with pytest.raises(OvertureValidationError, match="lat"):
         await streets_near_place(session, -95.0, SF_LON)
 
 
@@ -139,5 +140,5 @@ async def test_search_streets_limit_respected(session):
 
 @pytest.mark.asyncio
 async def test_search_streets_empty_query_raises(session):
-    with pytest.raises(ValueError, match="q"):
+    with pytest.raises(OvertureValidationError, match="q"):
         await search_streets(session, "")

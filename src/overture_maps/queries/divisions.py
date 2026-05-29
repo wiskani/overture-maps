@@ -5,8 +5,9 @@ from __future__ import annotations
 from sqlalchemy import JSON, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..exceptions import OvertureNotFoundError, OvertureValidationError
 from ..models import Division, TransportationSegment
-from ._utils import DEFAULT_LIMIT
+from ._utils import DEFAULT_LIMIT, handle_db_errors
 
 _LIMIT = DEFAULT_LIMIT
 
@@ -28,6 +29,7 @@ _DIVISION_SUBTYPE_HIERARCHY = [
 ]
 
 
+@handle_db_errors
 async def search_divisions(
     session: AsyncSession, q: str, limit: int = _LIMIT
 ) -> list[dict]:
@@ -36,9 +38,11 @@ async def search_divisions(
     Filters by the most granular subtype present in the loaded data.
     """
     if not q or not q.strip():
-        raise ValueError("q must be a non-empty string")
+        raise OvertureValidationError("q must be a non-empty string")
     if not isinstance(limit, int) or limit < 1:
-        raise ValueError(f"limit must be a positive integer, got: {limit!r}")
+        raise OvertureValidationError(
+            f"limit must be a positive integer, got: {limit!r}"
+        )
 
     pattern = f"%{q}%"
 
@@ -89,25 +93,28 @@ async def search_divisions(
     return [dict(row) for row in result.mappings()]
 
 
+@handle_db_errors
 async def streets_in_division(
     session: AsyncSession, division_id: str, q: str, limit: int = _LIMIT
 ) -> list[dict]:
     """Return streets whose name matches q within the given division.
 
-    Raises ValueError if division_id is not found.
+    Raises OvertureNotFoundError if division_id is not found.
     """
     if not division_id or not str(division_id).strip():
-        raise ValueError("division_id must be a non-empty string")
+        raise OvertureValidationError("division_id must be a non-empty string")
     if not q or not q.strip():
-        raise ValueError("q must be a non-empty string")
+        raise OvertureValidationError("q must be a non-empty string")
     if not isinstance(limit, int) or limit < 1:
-        raise ValueError(f"limit must be a positive integer, got: {limit!r}")
+        raise OvertureValidationError(
+            f"limit must be a positive integer, got: {limit!r}"
+        )
 
     exists = await session.execute(
         select(Division.id).where(Division.id == division_id).limit(1)
     )
     if exists.fetchone() is None:
-        raise ValueError(f"division_id {division_id!r} not found")
+        raise OvertureNotFoundError(f"division_id {division_id!r} not found")
 
     stmt = (
         select(

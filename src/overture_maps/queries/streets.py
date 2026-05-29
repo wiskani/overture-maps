@@ -6,12 +6,14 @@ from geoalchemy2 import Geography
 from sqlalchemy import JSON, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..exceptions import OvertureValidationError
 from ..models import TransportationSegment
-from ._utils import DEFAULT_LIMIT, validate_coords
+from ._utils import DEFAULT_LIMIT, handle_db_errors, validate_coords
 
 _LIMIT = DEFAULT_LIMIT
 
 
+@handle_db_errors
 async def street_at_point(session: AsyncSession, lat: float, lon: float) -> dict:
     """Return the nearest street and its cross streets for the given point."""
     validate_coords(lat, lon)
@@ -77,13 +79,16 @@ async def street_at_point(session: AsyncSession, lat: float, lon: float) -> dict
     }
 
 
+@handle_db_errors
 async def streets_near_place(
     session: AsyncSession, lat: float, lon: float, limit: int = _LIMIT
 ) -> list[dict]:
     """Return the nearest streets to the given point."""
     validate_coords(lat, lon)
     if not isinstance(limit, int) or limit < 1:
-        raise ValueError(f"limit must be a positive integer, got: {limit!r}")
+        raise OvertureValidationError(
+            f"limit must be a positive integer, got: {limit!r}"
+        )
 
     point = func.ST_SetSRID(func.ST_MakePoint(lon, lat), 4326)
     geog = Geography(srid=4326)
@@ -111,14 +116,17 @@ async def streets_near_place(
     return [dict(row) for row in result.mappings()]
 
 
+@handle_db_errors
 async def search_streets(
     session: AsyncSession, q: str, limit: int = _LIMIT
 ) -> list[dict]:
     """Return streets whose name matches the given string."""
     if not q or not q.strip():
-        raise ValueError("q must be a non-empty string")
+        raise OvertureValidationError("q must be a non-empty string")
     if not isinstance(limit, int) or limit < 1:
-        raise ValueError(f"limit must be a positive integer, got: {limit!r}")
+        raise OvertureValidationError(
+            f"limit must be a positive integer, got: {limit!r}"
+        )
 
     stmt = (
         select(
