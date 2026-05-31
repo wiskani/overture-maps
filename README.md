@@ -64,27 +64,76 @@ overturemaps download --bbox=<min_lon,min_lat,max_lon,max_lat> \
   --type=division_area -f geoparquet -o data/divisions.parquet
 ```
 
-### 2. Install the `[load]` extra
-
-The Overture Maps schema validation packages are only needed during load, not at query time. Install them with:
-
-```bash
-uv sync --extra load
-```
-
-### 3. Start overture_db
+### 2. Start overture_db
 
 ```bash
 docker compose up -d overture_db_test
 ```
 
-### 4. Run the load command
+### 3. Run the load command
 
 ```bash
 uv run overture-load --data-dir=data --dsn=postgresql://user:password@localhost:7003/overture
 ```
 
 The load script creates (or recreates) the `reference` schema and all tables, then inserts all rows from the downloaded parquet files. It is idempotent: re-running drops and reloads.
+
+## Query functions
+
+All functions are async and require an `AsyncSession` connected to `overture_db`. They return official Overture Maps Pydantic model instances — the same models used by the official schema packages.
+
+Functions that compute a spatial distance return a wrapper type that pairs the official model with the computed `distance_meters` field.
+
+### Return types
+
+| Function                                       | Return type                  |
+| ---------------------------------------------- | ---------------------------- |
+| `nearby_addresses(session, lat, lon)`          | `list[NearbyAddressResult]`  |
+| `street_at_point(session, lat, lon)`           | `StreetAtPointResult`        |
+| `nearby_places(session, lat, lon)`             | `list[NearbyPlaceResult]`    |
+| `search_places(session, q)`                    | `list[OverturePlace]`        |
+| `streets_near_place(session, lat, lon)`        | `list[NearbySegmentResult]`  |
+| `search_streets(session, q)`                   | `list[OvertureSegment]`      |
+| `search_divisions(session, q)`                 | `list[OvertureDivisionArea]` |
+| `streets_in_division(session, division_id, q)` | `list[OvertureSegment]`      |
+| `health(session, config)`                      | `dict`                       |
+
+### Wrapper types
+
+```python
+@dataclass
+class NearbyAddressResult:
+    address: OvertureAddress
+    distance_meters: float
+
+@dataclass
+class NearbyPlaceResult:
+    place: OverturePlace
+    distance_meters: float
+
+@dataclass
+class NearbySegmentResult:
+    segment: OvertureSegment
+    distance_meters: float
+
+@dataclass
+class StreetAtPointResult:
+    street: OvertureSegment | None
+    cross_streets: list[OvertureSegment]
+```
+
+All types are importable from the top-level package:
+
+```python
+from overture_maps import (
+    nearby_addresses,
+    NearbyAddressResult,
+    OvertureAddress,
+    OverturePlace,
+    OvertureDivisionArea,
+    OvertureSegment,
+)
+```
 
 ## CLI usage
 
@@ -163,9 +212,9 @@ The wheel is written to `dist/overture_maps-<version>-py3-none-any.whl`.
 
 ### 2. Create a GitHub Release
 
-1. Bump `version` in `pyproject.toml` (e.g. `0.1.2`) and update `CHANGELOG.md`.
+1. Bump `version` in `pyproject.toml` (e.g. `0.1.3`) and update `CHANGELOG.md`.
 2. Commit and push.
-3. Create a GitHub Release with tag `v<version>` (e.g. `v0.1.2`).
+3. Create a GitHub Release with tag `v<version>` (e.g. `v0.1.3`).
 4. Upload the `.whl` from `dist/` as a release asset.
 
 ### 3. Update the TSB backend
@@ -174,14 +223,14 @@ In `backend/pyproject.toml`, update the wheel URL under `[tool.uv.sources]`:
 
 ```toml
 [tool.uv.sources]
-overture-maps = { url = "https://github.com/wiskani/overture-maps/releases/download/v0.1.2/overture_maps-0.1.2-py3-none-any.whl" }
+overture-maps = { url = "https://github.com/wiskani/overture-maps/releases/download/v0.1.3/overture_maps-0.1.3-py3-none-any.whl" }
 ```
 
 Then run `uv sync` in the backend to install the new version.
 
 ## Overture Maps schema compatibility
 
-This release (`0.1.1`) was built and tested against:
+This release (`0.1.3`) was built and tested against:
 
 | Field            | Value          |
 | ---------------- | -------------- |

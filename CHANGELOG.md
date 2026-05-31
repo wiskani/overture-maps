@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.1.3] - 2026-05-31
+
+### Changed
+
+- Query functions now return official Overture Maps Pydantic model instances instead of
+  plain dicts. The `overture-schema-*` packages moved from the optional `[load]` extra
+  to main dependencies (the upstream packaging bug that required the workaround has been
+  fixed in the official repo).
+- Functions that compute a spatial distance (`nearby_addresses`, `nearby_places`,
+  `streets_near_place`) return a dataclass wrapper (`NearbyAddressResult`,
+  `NearbyPlaceResult`, `NearbySegmentResult`) that pairs the official model with the
+  `distance_meters` field, keeping the Overture schema models unmodified.
+- `street_at_point` returns `StreetAtPointResult(street, cross_streets)` instead of a
+  plain dict. SQL updated to include `version` for all selected segments.
+- `search_divisions` returns full geometry (Polygon/MultiPolygon) instead of the
+  centroid Point, matching the `DivisionArea` schema definition.
+- `streets_near_place`, `search_streets`, `streets_in_division` return
+  `list[OvertureSegment]` / `list[NearbySegmentResult]`.
+- Query SELECT lists expanded to include all columns available in each ORM model so
+  `model_validate` receives complete data.
+
+### Added
+
+- `src/overture_maps/results.py` — `NearbyAddressResult`, `NearbyPlaceResult`,
+  `NearbySegmentResult`, `StreetAtPointResult` dataclasses.
+- `_parse_feature` helper in `queries/_utils.py` — validates a query row dict against
+  an official Overture Pydantic model; logs debug and returns `None` on schema drift
+  instead of crashing the query.
+- Top-level exports: `NearbyAddressResult`, `NearbyPlaceResult`, `NearbySegmentResult`,
+  `StreetAtPointResult`, `OvertureAddress`, `OverturePlace`, `OvertureDivisionArea`,
+  `OvertureSegment`.
+
+### Removed
+
+- `[load]` optional extra — schema packages are now always installed.
+- `_get_schema_models()` lazy import function in `load.py` — replaced with module-level
+  `_SCHEMA_MODELS` dict using direct imports.
+
 ## [0.1.2] - 2026-05-28
 
 ### Added

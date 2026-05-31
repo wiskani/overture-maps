@@ -1,6 +1,6 @@
 [project]
 name = "overture-maps"
-version = "0.1.2"
+version = "0.1.3"
 description = "Load Overture Maps data into PostGIS and expose spatial query functions"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -15,10 +15,6 @@ dependencies = [
     "pyyaml>=6.0",
     "overturemaps>=0.8.0",
     "click>=8.0",
-]
-
-[project.optional-dependencies]
-load = [
     "overture-schema-system",
     "overture-schema-common",
     "overture-schema-addresses-theme",
@@ -87,10 +83,4 @@ dev-dependencies = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "pre-commit>=4.0",
-    "overture-schema-system",
-    "overture-schema-common",
-    "overture-schema-addresses-theme",
-    "overture-schema-places-theme",
-    "overture-schema-divisions-theme",
-    "overture-schema-transportation-theme",
 ]

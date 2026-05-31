@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from overture.schema.divisions.division_area import DivisionArea as OvertureDivisionArea
+from overture.schema.transportation.segment.models import Segment as OvertureSegment
 from sqlalchemy import JSON, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..exceptions import OvertureNotFoundError, OvertureValidationError
 from ..models import Division, TransportationSegment
-from ._utils import DEFAULT_LIMIT, handle_db_errors
+from ._utils import DEFAULT_LIMIT, _parse_feature, handle_db_errors
 
 _LIMIT = DEFAULT_LIMIT
 
@@ -32,7 +34,7 @@ _DIVISION_SUBTYPE_HIERARCHY = [
 @handle_db_errors
 async def search_divisions(
     session: AsyncSession, q: str, limit: int = _LIMIT
-) -> list[dict]:
+) -> list[OvertureDivisionArea]:
     """Return the lowest-hierarchy division whose name matches the given string.
 
     Filters by the most granular subtype present in the loaded data.
@@ -71,8 +73,10 @@ async def search_divisions(
         Division.division_id,
         Division.is_land,
         Division.is_territorial,
+        Division.bbox,
+        Division.sources,
         Division.names,
-        func.ST_AsGeoJSON(func.ST_Centroid(Division.geom)).cast(JSON).label("geometry"),
+        func.ST_AsGeoJSON(Division.geom).cast(JSON).label("geometry"),
     )
 
     if most_granular is None:
@@ -90,13 +94,24 @@ async def search_divisions(
         )
 
     result = await session.execute(stmt)
-    return [dict(row) for row in result.mappings()]
+    rows = [dict(row) for row in result.mappings()]
+
+    return [
+        div
+        for row in rows
+        if (
+            div := _parse_feature(
+                OvertureDivisionArea, row, "divisions", "division_area"
+            )
+        )
+        is not None
+    ]
 
 
 @handle_db_errors
 async def streets_in_division(
     session: AsyncSession, division_id: str, q: str, limit: int = _LIMIT
-) -> list[dict]:
+) -> list[OvertureSegment]:
     """Return streets whose name matches q within the given division.
 
     Raises OvertureNotFoundError if division_id is not found.
@@ -123,7 +138,10 @@ async def streets_in_division(
             TransportationSegment.subtype,
             TransportationSegment.road_class.label("class"),
             TransportationSegment.subclass,
+            TransportationSegment.bbox,
+            TransportationSegment.sources,
             TransportationSegment.names,
+            TransportationSegment.connectors,
             func.ST_AsGeoJSON(TransportationSegment.geom).cast(JSON).label("geometry"),
         )
         .join(
@@ -136,4 +154,11 @@ async def streets_in_division(
     )
 
     result = await session.execute(stmt)
-    return [dict(row) for row in result.mappings()]
+    rows = [dict(row) for row in result.mappings()]
+
+    return [
+        seg
+        for row in rows
+        if (seg := _parse_feature(OvertureSegment, row, "transportation", "segment"))
+        is not None
+    ]

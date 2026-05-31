@@ -2,13 +2,56 @@
 
 from __future__ import annotations
 
+import logging
 from functools import wraps
+from typing import TypeVar
 
 from sqlalchemy.exc import SQLAlchemyError
 
 from ..exceptions import OvertureConnectionError, OvertureError, OvertureValidationError
 
 DEFAULT_LIMIT = 10
+
+_T = TypeVar("_T")
+_logger = logging.getLogger(__name__)
+
+
+def _parse_feature(model_cls: type[_T], row: dict, theme: str, type_: str) -> _T | None:
+    """Validate a query row against an official Overture Pydantic model.
+
+    Uses TypeAdapter so Union types (e.g. Segment) work correctly.
+    On ValidationError (schema drift between data_release and schema packages),
+    falls back to model_construct to bypass validators while still returning a
+    typed object. Logs a warning so callers can detect the drift.
+    Returns None only if both paths fail.
+    """
+    from pydantic import TypeAdapter, ValidationError
+
+    d = {k: v for k, v in row.items() if k != "distance_meters"}
+    d["theme"] = theme
+    d["type"] = type_
+    try:
+        return TypeAdapter(model_cls).validate_python(d)
+    except ValidationError as exc:
+        # Schema drift: data_release version predates current schema packages.
+        # model_construct bypasses validators while preserving the typed interface.
+        _logger.warning(
+            "Schema drift id=%s theme=%s — constructing without validation: %s",
+            d.get("id"),
+            theme,
+            str(exc)[:200],
+        )
+        if hasattr(model_cls, "model_construct"):
+            try:
+                return model_cls.model_construct(**d)  # type: ignore[return-value]
+            except Exception as construct_exc:
+                _logger.debug(
+                    "model_construct failed id=%s: %s", d.get("id"), construct_exc
+                )
+        return None
+    except Exception as exc:
+        _logger.debug("Unexpected error id=%s: %s", d.get("id"), exc)
+        return None
 
 
 def validate_coords(lat: float, lon: float) -> None:

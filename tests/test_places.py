@@ -4,9 +4,22 @@ from __future__ import annotations
 
 import pytest
 
+from overture_maps import NearbyPlaceResult, OverturePlace
 from overture_maps.exceptions import OvertureValidationError
 from overture_maps.queries.places import nearby_places, search_places
 from tests.conftest import CBBA_LAT, CBBA_LON, SF_LAT, SF_LON
+
+
+def _primary_name(place: OverturePlace) -> str:
+    """Extract the primary name from a Place regardless of whether names is a
+    Pydantic model instance (after full validation) or a raw dict (after
+    model_construct fallback due to schema drift)."""
+    names = place.names
+    if names is None:
+        return ""
+    if isinstance(names, dict):
+        return names.get("primary") or ""
+    return getattr(names, "primary", None) or ""
 
 
 # --- nearby_places ---
@@ -24,27 +37,27 @@ async def test_nearby_places_cbba_returns_results(session):
 
 
 @pytest.mark.asyncio
-async def test_nearby_places_has_required_fields(session):
+async def test_nearby_places_result_type(session):
     results = await nearby_places(session, SF_LAT, SF_LON, limit=3)
     for r in results:
-        assert "id" in r
-        assert "geometry" in r
-        assert "distance_meters" in r
+        assert isinstance(r, NearbyPlaceResult)
+        assert isinstance(r.place, OverturePlace)
+        assert isinstance(r.distance_meters, float)
+
+
+@pytest.mark.asyncio
+async def test_nearby_places_has_id_and_geometry(session):
+    results = await nearby_places(session, SF_LAT, SF_LON, limit=3)
+    for r in results:
+        assert r.place.id is not None
+        assert r.place.geometry is not None
 
 
 @pytest.mark.asyncio
 async def test_nearby_places_ordered_by_distance(session):
     results = await nearby_places(session, SF_LAT, SF_LON, limit=5)
-    distances = [r["distance_meters"] for r in results]
+    distances = [r.distance_meters for r in results]
     assert distances == sorted(distances)
-
-
-@pytest.mark.asyncio
-async def test_nearby_places_geometry_is_dict(session):
-    results = await nearby_places(session, SF_LAT, SF_LON, limit=3)
-    for r in results:
-        assert isinstance(r["geometry"], dict)
-        assert "type" in r["geometry"]
 
 
 @pytest.mark.asyncio
@@ -62,11 +75,17 @@ async def test_search_places_returns_results(session):
 
 
 @pytest.mark.asyncio
+async def test_search_places_result_type(session):
+    results = await search_places(session, "hotel")
+    for r in results:
+        assert isinstance(r, OverturePlace)
+
+
+@pytest.mark.asyncio
 async def test_search_places_matches_query(session):
     results = await search_places(session, "hotel")
     for r in results:
-        primary = (r.get("names") or {}).get("primary") or ""
-        assert "hotel" in primary.lower()
+        assert "hotel" in _primary_name(r).lower()
 
 
 @pytest.mark.asyncio
@@ -79,7 +98,7 @@ async def test_search_places_no_match_returns_empty(session):
 async def test_search_places_has_geometry(session):
     results = await search_places(session, "hotel")
     for r in results:
-        assert isinstance(r.get("geometry"), dict)
+        assert r.geometry is not None
 
 
 @pytest.mark.asyncio

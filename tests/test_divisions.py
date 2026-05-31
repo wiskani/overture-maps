@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import pytest
+from overture.schema.transportation.segment.models import RoadSegment, RailSegment, WaterSegment
 from sqlalchemy import text
 
+from overture_maps import OvertureDivisionArea
 from overture_maps.exceptions import OvertureNotFoundError, OvertureValidationError
 from overture_maps.queries.divisions import search_divisions, streets_in_division
-from tests.conftest import CBBA_LAT, CBBA_LON, SF_LAT, SF_LON
+from tests.conftest import CBBA_LAT, CBBA_LON, SF_LAT, SF_LON  # noqa: F401
+
+_SEGMENT_TYPES = (RoadSegment, RailSegment, WaterSegment)
 
 
 @pytest.fixture(scope="module")
@@ -37,21 +41,23 @@ async def test_search_divisions_sf_returns_results(session):
 
 
 @pytest.mark.asyncio
-async def test_search_divisions_has_required_fields(session):
+async def test_search_divisions_result_type(session):
     results = await search_divisions(session, "San Francisco")
     for r in results:
-        assert "id" in r
-        assert "names" in r
-        assert "geometry" in r
+        assert isinstance(r, OvertureDivisionArea)
+        assert r.id is not None
+        assert r.names is not None
 
 
 @pytest.mark.asyncio
-async def test_search_divisions_geometry_is_centroid(session):
+async def test_search_divisions_geometry_is_polygon(session):
     results = await search_divisions(session, "San Francisco")
     for r in results:
-        geom = r["geometry"]
-        assert isinstance(geom, dict)
-        assert geom["type"] == "Point"
+        geom = r.geometry
+        # geometry is a Pydantic/Shapely object after full validation or a raw
+        # GeoJSON dict after model_construct fallback (schema drift).
+        geom_type = geom.get("type") if isinstance(geom, dict) else getattr(geom, "geom_type", None)
+        assert geom_type in ("Polygon", "MultiPolygon")
 
 
 @pytest.mark.asyncio
@@ -61,16 +67,15 @@ async def test_search_divisions_no_match_returns_empty(session):
 
 
 @pytest.mark.asyncio
-async def test_search_divisions_sf_county_returns_results(session):
-    results = await search_divisions(session, "San Francisco")
+async def test_search_divisions_cochabamba_returns_results(session):
+    results = await search_divisions(session, "Cochabamba")
     assert len(results) > 0
 
 
 @pytest.mark.asyncio
 async def test_search_divisions_returns_most_granular(session):
     results = await search_divisions(session, "San Francisco")
-    # All results should share the same (most granular) division_type
-    types = {r["subtype"] for r in results if r.get("subtype")}
+    types = {r.subtype for r in results if r.subtype}
     assert len(types) <= 1
 
 
@@ -95,18 +100,29 @@ async def test_streets_in_division_returns_list(session, any_division_id):
 
 
 @pytest.mark.asyncio
+async def test_streets_in_division_result_type(session, any_division_id):
+    results = await streets_in_division(session, any_division_id, "a")
+    for r in results:
+        assert isinstance(r, _SEGMENT_TYPES)
+
+
+@pytest.mark.asyncio
 async def test_streets_in_division_results_match_query(session, any_division_id):
     results = await streets_in_division(session, any_division_id, "st")
     for r in results:
-        primary = (r.get("names") or {}).get("primary") or ""
-        assert "st" in primary.lower()
+        names = r.names
+        if names is None:
+            continue
+        primary = names.get("primary") if isinstance(names, dict) else getattr(names, "primary", None)
+        if primary:
+            assert "st" in primary.lower()
 
 
 @pytest.mark.asyncio
 async def test_streets_in_division_has_geometry(session, any_division_id):
     results = await streets_in_division(session, any_division_id, "a")
     for r in results:
-        assert isinstance(r.get("geometry"), dict)
+        assert r.geometry is not None
 
 
 @pytest.mark.asyncio

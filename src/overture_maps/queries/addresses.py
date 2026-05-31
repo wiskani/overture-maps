@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from geoalchemy2 import Geography
+from overture.schema.addresses.address import Address as OvertureAddress
 from sqlalchemy import JSON, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..exceptions import OvertureValidationError
 from ..models import Address
-from ._utils import DEFAULT_LIMIT, handle_db_errors, validate_coords
+from ..results import NearbyAddressResult
+from ._utils import DEFAULT_LIMIT, _parse_feature, handle_db_errors, validate_coords
 
 _LIMIT = DEFAULT_LIMIT
 
@@ -16,7 +18,7 @@ _LIMIT = DEFAULT_LIMIT
 @handle_db_errors
 async def nearby_addresses(
     session: AsyncSession, lat: float, lon: float, limit: int = _LIMIT
-) -> list[dict]:
+) -> list[NearbyAddressResult]:
     """Return the nearest addresses to the given point.
 
     Returns an empty list if the theme has no data for the configured bbox.
@@ -41,6 +43,8 @@ async def nearby_addresses(
             Address.street,
             Address.unit,
             Address.address_levels,
+            Address.bbox,
+            Address.sources,
             func.ST_AsGeoJSON(Address.geom).cast(JSON).label("geometry"),
             func.ST_Distance(
                 cast(Address.geom, geog),
@@ -52,4 +56,15 @@ async def nearby_addresses(
     )
 
     result = await session.execute(stmt)
-    return [dict(row) for row in result.mappings()]
+    rows = [dict(row) for row in result.mappings()]
+
+    out: list[NearbyAddressResult] = []
+    for row in rows:
+        address = _parse_feature(OvertureAddress, row, "addresses", "address")
+        if address is not None:
+            out.append(
+                NearbyAddressResult(
+                    address=address, distance_meters=row["distance_meters"]
+                )
+            )
+    return out

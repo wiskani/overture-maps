@@ -16,6 +16,13 @@ from typing import Any
 
 import pyarrow.parquet as pq
 from geoalchemy2.elements import WKTElement
+from overture.schema.addresses.address import Address as OvertureAddress
+from overture.schema.divisions.division_area import DivisionArea as OvertureDivisionArea
+from overture.schema.places.place import Place as OverturePlace
+from overture.schema.transportation.connector.models import (
+    Connector as OvertureConnector,
+)
+from overture.schema.transportation.segment.models import Segment as OvertureSegment
 from shapely import wkb
 from sqlalchemy import create_engine, func
 from sqlalchemy import null as sa_null
@@ -72,33 +79,13 @@ def _jsonb(v: Any) -> Any:
     return sa_null() if cleaned is None else cleaned
 
 
-def _get_schema_models() -> dict:
-    """Import Overture schema models lazily (requires overture-maps[load] extra)."""
-    try:
-        from overture.schema.addresses.address import Address as OvertureAddress
-        from overture.schema.divisions.division_area import (
-            DivisionArea as OvertureDivisionArea,
-        )
-        from overture.schema.places.place import Place as OverturePlace
-        from overture.schema.transportation.connector.models import (
-            Connector as OvertureConnector,
-        )
-        from overture.schema.transportation.segment.models import (
-            Segment as OvertureSegment,
-        )
-
-        return {
-            "address": OvertureAddress,
-            "place": OverturePlace,
-            "division_area": OvertureDivisionArea,
-            "segment": OvertureSegment,
-            "connector": OvertureConnector,
-        }
-    except ImportError:
-        raise ImportError(
-            "Schema validation requires the 'load' extra: "
-            "pip install 'overture-maps[load]'"
-        )
+_SCHEMA_MODELS = {
+    "address": OvertureAddress,
+    "place": OverturePlace,
+    "division_area": OvertureDivisionArea,
+    "segment": OvertureSegment,
+    "connector": OvertureConnector,
+}
 
 
 def _validate(model_cls: type, row: dict, theme: str, type_: str, row_id: Any) -> None:
@@ -421,8 +408,6 @@ def load(data_dir: Path, dsn: str, config: Config, *, init_schema: bool = True) 
         config: Config with data_release, schema_version, etc.
         init_schema: If True (default), recreates the schema before loading.
     """
-    _schema_models = _get_schema_models()
-
     if init_schema:
         logger.info("Initializing reference schema...")
         _init_schema(dsn)
@@ -452,7 +437,7 @@ def load(data_dir: Path, dsn: str, config: Config, *, init_schema: bool = True) 
                     session, theme, config.data_release, config.schema_version, [], 0
                 )
                 continue
-            count, cols = loader_fn(session, path, _schema_models[model_key])
+            count, cols = loader_fn(session, path, _SCHEMA_MODELS[model_key])
             logger.info("  %s: %d rows loaded.", theme, count)
             _upsert_schema_meta(
                 session, theme, config.data_release, config.schema_version, cols, count

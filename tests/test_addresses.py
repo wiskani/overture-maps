@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from overture_maps import NearbyAddressResult, OvertureAddress
 from overture_maps.exceptions import OvertureValidationError
 from overture_maps.queries.addresses import nearby_addresses
 from tests.conftest import CBBA_LAT, CBBA_LON, SF_LAT, SF_LON
@@ -22,37 +23,31 @@ async def test_sf_returns_addresses(session):
 
 
 @pytest.mark.asyncio
-async def test_sf_result_has_required_fields(session):
+async def test_sf_result_type(session):
     results = await nearby_addresses(session, SF_LAT, SF_LON, limit=3)
     for r in results:
-        assert "id" in r
-        assert "geometry" in r
-        assert "distance_meters" in r
+        assert isinstance(r, NearbyAddressResult)
+        assert isinstance(r.address, OvertureAddress)
+        assert isinstance(r.distance_meters, float)
+
+
+@pytest.mark.asyncio
+async def test_sf_result_has_id_and_geometry(session):
+    results = await nearby_addresses(session, SF_LAT, SF_LON, limit=3)
+    for r in results:
+        assert r.address.id is not None
+        assert r.address.geometry is not None
 
 
 @pytest.mark.asyncio
 async def test_sf_ordered_by_distance(session):
     results = await nearby_addresses(session, SF_LAT, SF_LON, limit=5)
-    distances = [r["distance_meters"] for r in results]
+    distances = [r.distance_meters for r in results]
     assert distances == sorted(distances)
 
 
 @pytest.mark.asyncio
-async def test_sf_geometry_is_dict(session):
-    results = await nearby_addresses(session, SF_LAT, SF_LON, limit=3)
-    for r in results:
-        assert isinstance(r["geometry"], dict)
-        assert "type" in r["geometry"]
-        assert "coordinates" in r["geometry"]
-
-
-@pytest.mark.asyncio
 async def test_empty_table_returns_empty_list(session):
-    # Verify the function returns [] when there are no rows in the table.
-    # We test this by querying with a huge distance limit and checking the count
-    # matches what's in the table. When table is empty, result must be [].
-    # Since SF data is loaded, we instead verify the empty-list contract via
-    # a direct SQL check: if COUNT(*) == 0, then nearby_addresses must also be [].
     from sqlalchemy import text
     count = (await session.execute(text("SELECT COUNT(*) FROM reference.addresses"))).scalar()
     result = await nearby_addresses(session, CBBA_LAT, CBBA_LON)
