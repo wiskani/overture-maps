@@ -1,13 +1,14 @@
-"""Tests for street_at_point(), streets_near_place(), search_streets()."""
+"""Tests for street_at_point(), streets_near_place(), search_streets(), get_segment_by_id()."""
 
 from __future__ import annotations
 
 import pytest
 from overture.schema.transportation.segment.models import RoadSegment, RailSegment, WaterSegment
+from sqlalchemy import text
 
-from overture_maps import NearbySegmentResult, StreetAtPointResult
-from overture_maps.exceptions import OvertureValidationError
-from overture_maps.queries.streets import search_streets, street_at_point, streets_near_place
+from overture_maps import NearbySegmentResult, OvertureSegment, StreetAtPointResult
+from overture_maps.exceptions import OvertureConnectionError, OvertureValidationError
+from overture_maps.queries.streets import get_segment_by_id, search_streets, street_at_point, streets_near_place
 from tests.conftest import CBBA_LAT, CBBA_LON, SF_LAT, SF_LON
 
 _SEGMENT_TYPES = (RoadSegment, RailSegment, WaterSegment)
@@ -170,3 +171,49 @@ async def test_search_streets_limit_respected(session):
 async def test_search_streets_empty_query_raises(session):
     with pytest.raises(OvertureValidationError, match="q"):
         await search_streets(session, "")
+
+
+# --- get_segment_by_id ---
+
+@pytest.fixture(scope="module")
+async def any_segment_id(session_factory):
+    """Return a real segment id from the test database."""
+    async with session_factory() as s:
+        result = await s.execute(
+            text("SELECT id FROM reference.transportation_segments LIMIT 1")
+        )
+        row = result.fetchone()
+        assert row is not None, "No segments loaded — cannot run test"
+        return row[0]
+
+
+@pytest.mark.asyncio
+async def test_get_segment_by_id_existing(session, any_segment_id):
+    result = await get_segment_by_id(session, any_segment_id)
+    assert isinstance(result, _SEGMENT_TYPES)
+    assert result.id == any_segment_id
+
+
+@pytest.mark.asyncio
+async def test_get_segment_by_id_unknown_returns_none(session):
+    result = await get_segment_by_id(session, "nonexistent-segment-id-xyz")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_segment_by_id_has_geometry(session, any_segment_id):
+    result = await get_segment_by_id(session, any_segment_id)
+    assert result is not None
+    assert result.geometry is not None
+
+
+@pytest.mark.asyncio
+async def test_get_segment_by_id_db_error_raises_connection_error():
+    from unittest.mock import AsyncMock
+    from sqlalchemy.exc import OperationalError
+
+    mock_session = AsyncMock()
+    mock_session.execute.side_effect = OperationalError("connection refused", None, None)
+
+    with pytest.raises(OvertureConnectionError):
+        await get_segment_by_id(mock_session, "some-id")

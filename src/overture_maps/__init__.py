@@ -11,11 +11,20 @@ from .exceptions import (
     OvertureNotFoundError,
     OvertureValidationError,
 )
-from .queries.addresses import nearby_addresses
-from .queries.divisions import search_divisions, streets_in_division
+from .queries.addresses import get_address_by_id, nearby_addresses
+from .queries.divisions import (
+    divisions_containing_point,
+    search_divisions,
+    streets_in_division,
+)
 from .queries.health import health
 from .queries.places import nearby_places, search_places
-from .queries.streets import search_streets, street_at_point, streets_near_place
+from .queries.streets import (
+    get_segment_by_id,
+    search_streets,
+    street_at_point,
+    streets_near_place,
+)
 from .results import (
     NearbyAddressResult,
     NearbyPlaceResult,
@@ -26,13 +35,16 @@ from .results import (
 __all__ = [
     # query functions
     "nearby_addresses",
+    "get_address_by_id",
     "street_at_point",
     "nearby_places",
     "search_places",
     "streets_near_place",
     "search_streets",
+    "get_segment_by_id",
     "search_divisions",
     "streets_in_division",
+    "divisions_containing_point",
     "health",
     # result wrapper types
     "NearbyAddressResult",

@@ -1,4 +1,4 @@
-"""Tests for search_divisions() and streets_in_division()."""
+"""Tests for search_divisions(), streets_in_division(), and divisions_containing_point()."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from overture.schema.transportation.segment.models import RoadSegment, RailSegme
 from sqlalchemy import text
 
 from overture_maps import OvertureDivisionArea
-from overture_maps.exceptions import OvertureNotFoundError, OvertureValidationError
-from overture_maps.queries.divisions import search_divisions, streets_in_division
+from overture_maps.exceptions import OvertureConnectionError, OvertureNotFoundError, OvertureValidationError
+from overture_maps.queries.divisions import divisions_containing_point, search_divisions, streets_in_division
 from tests.conftest import CBBA_LAT, CBBA_LON, SF_LAT, SF_LON  # noqa: F401
 
 _SEGMENT_TYPES = (RoadSegment, RailSegment, WaterSegment)
@@ -147,3 +147,63 @@ async def test_streets_in_division_empty_division_id_raises(session):
 async def test_streets_in_division_empty_query_raises(session):
     with pytest.raises(OvertureValidationError, match="q"):
         await streets_in_division(session, "some-id", "")
+
+
+# --- divisions_containing_point ---
+
+@pytest.mark.asyncio
+async def test_divisions_containing_point_cbba_returns_results(session):
+    results = await divisions_containing_point(session, CBBA_LAT, CBBA_LON)
+    assert len(results) > 0
+
+
+@pytest.mark.asyncio
+async def test_divisions_containing_point_sf_returns_results(session):
+    results = await divisions_containing_point(session, SF_LAT, SF_LON)
+    assert len(results) > 0
+
+
+@pytest.mark.asyncio
+async def test_divisions_containing_point_result_type(session):
+    results = await divisions_containing_point(session, CBBA_LAT, CBBA_LON)
+    for r in results:
+        assert isinstance(r, OvertureDivisionArea)
+        assert r.id is not None
+
+
+@pytest.mark.asyncio
+async def test_divisions_containing_point_outside_returns_empty(session):
+    # Point in the middle of the Pacific Ocean — outside all loaded divisions
+    results = await divisions_containing_point(session, 0.0, -150.0)
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_divisions_containing_point_ordered_by_admin_level(session):
+    results = await divisions_containing_point(session, CBBA_LAT, CBBA_LON)
+    levels = [r.admin_level for r in results if r.admin_level is not None]
+    assert levels == sorted(levels, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_divisions_containing_point_invalid_lat_raises(session):
+    with pytest.raises(OvertureValidationError, match="lat"):
+        await divisions_containing_point(session, 95.0, CBBA_LON)
+
+
+@pytest.mark.asyncio
+async def test_divisions_containing_point_invalid_lon_raises(session):
+    with pytest.raises(OvertureValidationError, match="lon"):
+        await divisions_containing_point(session, CBBA_LAT, 185.0)
+
+
+@pytest.mark.asyncio
+async def test_divisions_containing_point_db_error_raises_connection_error():
+    from unittest.mock import AsyncMock
+    from sqlalchemy.exc import OperationalError
+
+    mock_session = AsyncMock()
+    mock_session.execute.side_effect = OperationalError("connection refused", None, None)
+
+    with pytest.raises(OvertureConnectionError):
+        await divisions_containing_point(mock_session, CBBA_LAT, CBBA_LON)

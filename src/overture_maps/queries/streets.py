@@ -14,6 +14,19 @@ from ._utils import DEFAULT_LIMIT, _parse_feature, handle_db_errors, validate_co
 
 _LIMIT = DEFAULT_LIMIT
 
+_SEGMENT_COLS = (
+    TransportationSegment.id,
+    TransportationSegment.version,
+    TransportationSegment.subtype,
+    TransportationSegment.road_class.label("class"),
+    TransportationSegment.subclass,
+    TransportationSegment.bbox,
+    TransportationSegment.sources,
+    TransportationSegment.names,
+    TransportationSegment.connectors,
+    func.ST_AsGeoJSON(TransportationSegment.geom).cast(JSON).label("geometry"),
+)
+
 
 def _segment(row: dict) -> OvertureSegment | None:
     return _parse_feature(OvertureSegment, row, "transportation", "segment")
@@ -114,16 +127,7 @@ async def streets_near_place(
 
     stmt = (
         select(
-            TransportationSegment.id,
-            TransportationSegment.version,
-            TransportationSegment.subtype,
-            TransportationSegment.road_class.label("class"),
-            TransportationSegment.subclass,
-            TransportationSegment.bbox,
-            TransportationSegment.sources,
-            TransportationSegment.names,
-            TransportationSegment.connectors,
-            func.ST_AsGeoJSON(TransportationSegment.geom).cast(JSON).label("geometry"),
+            *_SEGMENT_COLS,
             distance.label("distance_meters"),
         )
         .order_by(distance)
@@ -158,18 +162,7 @@ async def search_streets(
         )
 
     stmt = (
-        select(
-            TransportationSegment.id,
-            TransportationSegment.version,
-            TransportationSegment.subtype,
-            TransportationSegment.road_class.label("class"),
-            TransportationSegment.subclass,
-            TransportationSegment.bbox,
-            TransportationSegment.sources,
-            TransportationSegment.names,
-            TransportationSegment.connectors,
-            func.ST_AsGeoJSON(TransportationSegment.geom).cast(JSON).label("geometry"),
-        )
+        select(*_SEGMENT_COLS)
         .where(TransportationSegment.names["primary"].astext.ilike(f"%{q}%"))
         .limit(limit)
     )
@@ -178,3 +171,16 @@ async def search_streets(
     rows = [dict(row) for row in result.mappings()]
 
     return [seg for row in rows if (seg := _segment(row)) is not None]
+
+
+@handle_db_errors
+async def get_segment_by_id(
+    session: AsyncSession, segment_id: str
+) -> OvertureSegment | None:
+    """Return a single OvertureSegment by its Overture id, or None if not found."""
+    stmt = select(*_SEGMENT_COLS).where(TransportationSegment.id == segment_id)
+    result = await session.execute(stmt)
+    row = result.mappings().fetchone()
+    if row is None:
+        return None
+    return _segment(dict(row))

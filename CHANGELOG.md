@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.1.4] - 2026-06-01
+
+### Added
+
+- `get_address_by_id(session, address_id)` in `queries/addresses.py` — returns a single
+  `OvertureAddress` by Overture id, or `None` if not found.
+- `get_segment_by_id(session, segment_id)` in `queries/streets.py` — returns a single
+  `OvertureSegment` by Overture id, or `None` if not found.
+- `divisions_containing_point(session, lat, lon)` in `queries/divisions.py` — returns all
+  `OvertureDivisionArea` instances whose polygon contains the given point, ordered from
+  most to least granular (`admin_level DESC NULLS LAST`). Returns an empty list when the
+  point falls outside all loaded divisions.
+- All three functions exported from the top-level package `__init__.py`.
+- Integration tests for all three new functions (including `@handle_db_errors` coverage
+  via mocked `SQLAlchemyError`).
+
+### Changed
+
+- `queries/addresses.py`: extracted `_ADDRESS_COLS` tuple to avoid column list duplication
+  between `nearby_addresses` and `get_address_by_id`.
+- `queries/streets.py`: extracted `_SEGMENT_COLS` tuple shared by `streets_near_place`,
+  `search_streets`, and `get_segment_by_id`.
+- `queries/divisions.py`: extracted `_DIVISION_COLS` tuple and `_division()` helper shared
+  by `search_divisions` and `divisions_containing_point`; added `validate_coords` import.
+
 ## [0.1.3] - 2026-05-31
 
 ### Changed

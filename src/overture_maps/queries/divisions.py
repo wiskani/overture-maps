@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from overture.schema.divisions.division_area import DivisionArea as OvertureDivisionArea
 from overture.schema.transportation.segment.models import Segment as OvertureSegment
-from sqlalchemy import JSON, func, select
+from sqlalchemy import JSON, func, nullslast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..exceptions import OvertureNotFoundError, OvertureValidationError
 from ..models import Division, TransportationSegment
-from ._utils import DEFAULT_LIMIT, _parse_feature, handle_db_errors
+from ._utils import DEFAULT_LIMIT, _parse_feature, handle_db_errors, validate_coords
 
 _LIMIT = DEFAULT_LIMIT
 
@@ -29,6 +29,27 @@ _DIVISION_SUBTYPE_HIERARCHY = [
     "dependency",
     "country",
 ]
+
+_DIVISION_COLS = (
+    Division.id,
+    Division.version,
+    Division.subtype,
+    Division.division_class.label("class"),
+    Division.country,
+    Division.region,
+    Division.admin_level,
+    Division.division_id,
+    Division.is_land,
+    Division.is_territorial,
+    Division.bbox,
+    Division.sources,
+    Division.names,
+    func.ST_AsGeoJSON(Division.geom).cast(JSON).label("geometry"),
+)
+
+
+def _division(row: dict) -> OvertureDivisionArea | None:
+    return _parse_feature(OvertureDivisionArea, row, "divisions", "division_area")
 
 
 @handle_db_errors
@@ -62,32 +83,15 @@ async def search_divisions(
             most_granular = st
             break
 
-    _cols = (
-        Division.id,
-        Division.version,
-        Division.subtype,
-        Division.division_class.label("class"),
-        Division.country,
-        Division.region,
-        Division.admin_level,
-        Division.division_id,
-        Division.is_land,
-        Division.is_territorial,
-        Division.bbox,
-        Division.sources,
-        Division.names,
-        func.ST_AsGeoJSON(Division.geom).cast(JSON).label("geometry"),
-    )
-
     if most_granular is None:
         stmt = (
-            select(*_cols)
+            select(*_DIVISION_COLS)
             .where(Division.names["primary"].astext.ilike(pattern))
             .limit(limit)
         )
     else:
         stmt = (
-            select(*_cols)
+            select(*_DIVISION_COLS)
             .where(Division.subtype == most_granular)
             .where(Division.names["primary"].astext.ilike(pattern))
             .limit(limit)
@@ -96,16 +100,7 @@ async def search_divisions(
     result = await session.execute(stmt)
     rows = [dict(row) for row in result.mappings()]
 
-    return [
-        div
-        for row in rows
-        if (
-            div := _parse_feature(
-                OvertureDivisionArea, row, "divisions", "division_area"
-            )
-        )
-        is not None
-    ]
+    return [div for row in rows if (div := _division(row)) is not None]
 
 
 @handle_db_errors
@@ -162,3 +157,29 @@ async def streets_in_division(
         if (seg := _parse_feature(OvertureSegment, row, "transportation", "segment"))
         is not None
     ]
+
+
+@handle_db_errors
+async def divisions_containing_point(
+    session: AsyncSession, lat: float, lon: float
+) -> list[OvertureDivisionArea]:
+    """Return all divisions whose polygon contains the given point.
+
+    Ordered from most to least granular (highest admin_level first).
+    Returns an empty list if the point falls outside all loaded divisions.
+    """
+    validate_coords(lat, lon)
+
+    point = func.ST_SetSRID(func.ST_MakePoint(lon, lat), 4326)
+
+    stmt = (
+        select(*_DIVISION_COLS)
+        .where(Division.subtype.isnot(None))
+        .where(func.ST_Contains(Division.geom, point))
+        .order_by(nullslast(Division.admin_level.desc()))
+    )
+
+    result = await session.execute(stmt)
+    rows = [dict(row) for row in result.mappings()]
+
+    return [div for row in rows if (div := _division(row)) is not None]

@@ -12,6 +12,21 @@ from ..models import Address
 from ..results import NearbyAddressResult
 from ._utils import DEFAULT_LIMIT, _parse_feature, handle_db_errors, validate_coords
 
+_ADDRESS_COLS = (
+    Address.id,
+    Address.version,
+    Address.country,
+    Address.number,
+    Address.postal_city,
+    Address.postcode,
+    Address.street,
+    Address.unit,
+    Address.address_levels,
+    Address.bbox,
+    Address.sources,
+    func.ST_AsGeoJSON(Address.geom).cast(JSON).label("geometry"),
+)
+
 _LIMIT = DEFAULT_LIMIT
 
 
@@ -34,18 +49,7 @@ async def nearby_addresses(
 
     stmt = (
         select(
-            Address.id,
-            Address.version,
-            Address.country,
-            Address.number,
-            Address.postal_city,
-            Address.postcode,
-            Address.street,
-            Address.unit,
-            Address.address_levels,
-            Address.bbox,
-            Address.sources,
-            func.ST_AsGeoJSON(Address.geom).cast(JSON).label("geometry"),
+            *_ADDRESS_COLS,
             func.ST_Distance(
                 cast(Address.geom, geog),
                 cast(point, geog),
@@ -68,3 +72,16 @@ async def nearby_addresses(
                 )
             )
     return out
+
+
+@handle_db_errors
+async def get_address_by_id(
+    session: AsyncSession, address_id: str
+) -> OvertureAddress | None:
+    """Return a single OvertureAddress by its Overture id, or None if not found."""
+    stmt = select(*_ADDRESS_COLS).where(Address.id == address_id)
+    result = await session.execute(stmt)
+    row = result.mappings().fetchone()
+    if row is None:
+        return None
+    return _parse_feature(OvertureAddress, dict(row), "addresses", "address")
