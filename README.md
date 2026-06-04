@@ -1,6 +1,6 @@
 # overture-maps
 
-Python library that loads Overture Maps data for a configured bounding box into PostGIS and exposes spatial query functions. Used by the TSB backend — installed as a `.whl` via GitHub Releases, no HTTP service.
+Python library that loads Overture Maps data for a configured bounding box into PostGIS and exposes spatial query functions. Used by the TSB backend — installed via git tag, no HTTP service.
 
 ## Requirements
 
@@ -33,8 +33,6 @@ All settings live in `overture.yaml` (gitignored). Every field can be overridden
 | `db_sync_url`       | `OVERTURE_DB_SYNC_URL`     | for load |
 
 There is **no default database URL**. Every CLI command requires either `OVERTURE_DB_URL` in the environment or `db_url` set in `overture.yaml`. If neither is present the command exits immediately with a clear error message.
-
-When using the library programmatically (as the TSB backend does), pass a `Config` object and `AsyncSession` directly — `overture.yaml` is not read.
 
 ## Loading data
 
@@ -78,27 +76,75 @@ uv run overture-load --data-dir=data --dsn=postgresql://user:password@localhost:
 
 The load script creates (or recreates) the `reference` schema and all tables, then inserts all rows from the downloaded parquet files. It is idempotent: re-running drops and reloads.
 
-## Query functions
+## Usage
 
-All functions are async and require an `AsyncSession` connected to `overture_db`. They return official Overture Maps Pydantic model instances — the same models used by the official schema packages.
+### OvertureClient (recommended)
 
-Functions that compute a spatial distance return a wrapper type that pairs the official model with the computed `distance_meters` field.
+`OvertureClient` is the recommended way to use this library programmatically. It accepts a DSN string and manages the database connection internally — no SQLAlchemy imports required on the caller side.
+
+```python
+from overture_maps import OvertureClient
+
+client = OvertureClient(dsn="postgresql+asyncpg://user:password@localhost:7003/overture")
+
+# Find nearest addresses to a point
+results = await client.nearby_addresses(lat=-17.389, lon=-66.157)
+for r in results:
+    print(r.address.street, r.distance_meters)
+
+# Find nearest streets (for areas without address coverage)
+results = await client.streets_near_place(lat=-17.389, lon=-66.157)
+
+# Get administrative divisions containing a point
+divisions = await client.divisions_containing_point(lat=-17.389, lon=-66.157)
+```
+
+Connection pool options (all optional):
+
+```python
+client = OvertureClient(
+    dsn="postgresql+asyncpg://...",
+    pool_size=5,
+    max_overflow=2,
+    pool_timeout=10,
+    pool_recycle=1800,
+    statement_timeout=5000,  # milliseconds
+)
+```
+
+### Available methods
+
+| Method                                          | Return type                  |
+| ----------------------------------------------- | ---------------------------- |
+| `nearby_addresses(lat, lon)`                    | `list[NearbyAddressResult]`  |
+| `get_address_by_id(address_id)`                 | `OvertureAddress \| None`    |
+| `street_at_point(lat, lon)`                     | `StreetAtPointResult`        |
+| `streets_near_place(lat, lon)`                  | `list[NearbySegmentResult]`  |
+| `search_streets(q)`                             | `list[OvertureSegment]`      |
+| `get_segment_by_id(segment_id)`                 | `OvertureSegment \| None`    |
+| `nearby_places(lat, lon)`                       | `list[NearbyPlaceResult]`    |
+| `search_places(q)`                              | `list[OverturePlace]`        |
+| `divisions_containing_point(lat, lon)`          | `list[OvertureDivisionArea]` |
+| `search_divisions(q)`                           | `list[OvertureDivisionArea]` |
+| `streets_in_division(division_id, q)`           | `list[OvertureSegment]`      |
+| `health(config)`                                | `dict`                       |
+
+All methods accept an optional `limit: int = 10` parameter where applicable.
+
+### Low-level API (advanced)
+
+If you need to manage session lifecycle yourself (e.g. to share a session across multiple queries in a transaction), the module-level functions are still available. They all require an `AsyncSession` connected to `overture_db`:
+
+```python
+from sqlalchemy.ext.asyncio import AsyncSession
+from overture_maps import nearby_addresses, divisions_containing_point
+
+async with session_maker() as session:
+    results = await nearby_addresses(session, lat=-17.389, lon=-66.157)
+    divs = await divisions_containing_point(session, lat=-17.389, lon=-66.157)
+```
 
 ### Return types
-
-| Function                                       | Return type                  |
-| ---------------------------------------------- | ---------------------------- |
-| `nearby_addresses(session, lat, lon)`          | `list[NearbyAddressResult]`  |
-| `street_at_point(session, lat, lon)`           | `StreetAtPointResult`        |
-| `nearby_places(session, lat, lon)`             | `list[NearbyPlaceResult]`    |
-| `search_places(session, q)`                    | `list[OverturePlace]`        |
-| `streets_near_place(session, lat, lon)`        | `list[NearbySegmentResult]`  |
-| `search_streets(session, q)`                   | `list[OvertureSegment]`      |
-| `search_divisions(session, q)`                 | `list[OvertureDivisionArea]` |
-| `streets_in_division(session, division_id, q)` | `list[OvertureSegment]`      |
-| `health(session, config)`                      | `dict`                       |
-
-### Wrapper types
 
 ```python
 @dataclass
@@ -126,7 +172,7 @@ All types are importable from the top-level package:
 
 ```python
 from overture_maps import (
-    nearby_addresses,
+    OvertureClient,
     NearbyAddressResult,
     OvertureAddress,
     OverturePlace,
@@ -200,37 +246,24 @@ uv run pytest tests/ -v
 
 Parquet files are downloaded on the first run and cached in `tests/data/`. Subsequent runs are fast.
 
-## Building and releasing a new version
+## Releasing a new version
 
-### 1. Build the wheel
-
-```bash
-uv build
-```
-
-The wheel is written to `dist/overture_maps-<version>-py3-none-any.whl`.
-
-### 2. Create a GitHub Release
-
-1. Bump `version` in `pyproject.toml` (e.g. `0.1.3`) and update `CHANGELOG.md`.
-2. Commit and push.
-3. Create a GitHub Release with tag `v<version>` (e.g. `v0.1.3`).
-4. Upload the `.whl` from `dist/` as a release asset.
-
-### 3. Update the TSB backend
-
-In `backend/pyproject.toml`, update the wheel URL under `[tool.uv.sources]`:
-
-```toml
-[tool.uv.sources]
-overture-maps = { url = "https://github.com/wiskani/overture-maps/releases/download/v0.1.3/overture_maps-0.1.3-py3-none-any.whl" }
-```
-
-Then run `uv sync` in the backend to install the new version.
+1. Bump `version` in `pyproject.toml` and commit.
+2. Tag the commit and push:
+   ```bash
+   git tag v<version>
+   git push origin master
+   git push origin v<version>
+   ```
+3. Update the TSB backend — in `backend/pyproject.toml` under `[tool.uv.sources]`:
+   ```toml
+   overture-maps = { git = "https://github.com/wiskani/overture-maps", tag = "v<version>" }
+   ```
+4. Run `uv lock && uv sync` in the TSB backend.
 
 ## Overture Maps schema compatibility
 
-This release (`0.1.3`) was built and tested against:
+This release (`0.1.5`) was built and tested against:
 
 | Field            | Value          |
 | ---------------- | -------------- |
