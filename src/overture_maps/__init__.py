@@ -1,5 +1,6 @@
 """overture-maps: PostGIS spatial queries over Overture Maps data."""
 
+from .client import OvertureClient
 from overture.schema.addresses.address import Address as OvertureAddress
 from overture.schema.divisions.division_area import DivisionArea as OvertureDivisionArea
 from overture.schema.places.place import Place as OverturePlace
@@ -33,6 +34,8 @@ from .results import (
 )
 
 __all__ = [
+    # high-level client
+    "OvertureClient",
     # query functions
     "nearby_addresses",
     "get_address_by_id",
