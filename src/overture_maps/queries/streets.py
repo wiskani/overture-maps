@@ -163,7 +163,11 @@ async def search_streets(
 
     stmt = (
         select(*_SEGMENT_COLS)
-        .where(TransportationSegment.names["primary"].astext.ilike(f"%{q}%"))
+        .where(
+            func.unaccent(TransportationSegment.names["primary"].astext).ilike(
+                func.unaccent(f"%{q}%")
+            )
+        )
         .limit(limit)
     )
 

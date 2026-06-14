@@ -50,6 +50,7 @@ def _init_schema(dsn: str) -> None:
     engine = create_engine(dsn)
     with engine.begin() as conn:
         conn.execute(sa_text("CREATE EXTENSION IF NOT EXISTS postgis"))
+        conn.execute(sa_text("CREATE EXTENSION IF NOT EXISTS unaccent"))
         conn.execute(sa_text("CREATE SCHEMA IF NOT EXISTS reference"))
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
