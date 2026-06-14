@@ -4,7 +4,7 @@
 #   OVERTURE_CITY, OVERTURE_BBOX_MIN_LON, OVERTURE_BBOX_MIN_LAT,
 #   OVERTURE_BBOX_MAX_LON, OVERTURE_BBOX_MAX_LAT,
 #   OVERTURE_DATA_RELEASE, OVERTURE_SCHEMA_VERSION,
-#   OVERTURE_DB_URL, OVERTURE_DB_SYNC_URL
+#   OVERTURE_DB_URL, OVERTURE_DB_SYNC_URL, OVERTURE_DATA_DIR
 #
 # When using this library as a dependency in another application, do NOT copy
 # this file into that project. Instead, generate overture.yaml from your
@@ -38,3 +38,8 @@ themes:
 # When using this library programmatically, pass Config directly instead.
 db_url: "postgresql+asyncpg://user:password@host:port/dbname"
 db_sync_url: "postgresql://user:password@host:port/dbname"
+
+# Directory where GeoParquet files are stored after downloading with overturemaps CLI.
+# Resolution priority: OVERTURE_DATA_DIR env var > this field > ~/.local/share/overture-maps/
+# Leave commented to use the default XDG user data directory.
+# data_dir: /path/to/your/overture-data

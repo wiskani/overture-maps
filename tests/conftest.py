@@ -85,16 +85,27 @@ def _download_if_missing() -> None:
             out = city_dir / fname
             if out.exists():
                 continue
-            subprocess.run(
-                [
-                    "overturemaps", "download",
-                    f"--bbox={bbox_str}",
-                    f"--type={type_}",
-                    "-f", "geoparquet",
-                    "-o", str(out),
-                ],
-                check=True,
-            )
+            try:
+                subprocess.run(
+                    [
+                        "overturemaps", "download",
+                        f"--bbox={bbox_str}",
+                        f"--type={type_}",
+                        "-f", "geoparquet",
+                        "-o", str(out),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                stderr = exc.stderr.strip() if exc.stderr else "(no stderr)"
+                pytest.fail(
+                    f"Failed to download Overture data — type='{type_}', bbox={bbox_str}\n"
+                    f"stderr: {stderr}\n\n"
+                    "The Overture Maps service may be unavailable.\n"
+                    "Check status at: https://docs.overturemaps.org/getting-data/overturemaps-py/"
+                )
 
 
 @pytest.fixture(scope="session", autouse=True)

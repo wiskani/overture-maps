@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.1.7] - 2026-06-14
+
+### Added
+
+- `OvertureDataNotFoundError` exception raised when the GeoParquet data directory
+  is missing or contains no `.parquet` files. Exported from the top-level package.
+- `Config.data_dir` field: stores the resolved path to the GeoParquet directory.
+  Resolution priority: `OVERTURE_DATA_DIR` env var > `data_dir:` in `overture.yaml` >
+  `~/.local/share/overture-maps/` (XDG Base Directory Specification).
+- `config.py`: `_default_data_dir()` helper that respects `XDG_DATA_HOME` on Linux/macOS
+  and falls back to `~/.local/share/overture-maps/`.
+- `overture.yaml.example`: documented `data_dir:` field and `OVERTURE_DATA_DIR` env var.
+
+### Changed
+
+- `overture-load` CLI: `--data-dir` now defaults to `None` (resolved at runtime from
+  `Config.data_dir`) instead of `Path.cwd() / "data"`. The explicit `--data-dir` flag
+  still overrides all other sources.
+- `overture-load` CLI: fails fast with a clear error message (including the exact
+  `overturemaps download` commands to run) when the resolved data directory does not
+  exist or contains no `.parquet` files.
+- `tests/conftest.py`: `subprocess.CalledProcessError` during data download is now
+  caught and re-raised as `pytest.fail(...)` with the stderr output and a pointer to
+  the Overture Maps documentation, instead of an opaque traceback.
+
 ## [0.1.4] - 2026-06-01
 
 ### Added

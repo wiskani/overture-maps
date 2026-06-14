@@ -21,3 +21,7 @@ class OvertureValidationError(OvertureError):
 
 class OvertureNotFoundError(OvertureError):
     """Raised when a referenced entity does not exist in the database."""
+
+
+class OvertureDataNotFoundError(OvertureError):
+    """Raised when the GeoParquet data directory is missing or empty."""

@@ -1,13 +1,14 @@
 """overture-maps: PostGIS spatial queries over Overture Maps data."""
 
-from .client import OvertureClient
 from overture.schema.addresses.address import Address as OvertureAddress
 from overture.schema.divisions.division_area import DivisionArea as OvertureDivisionArea
 from overture.schema.places.place import Place as OverturePlace
 from overture.schema.transportation.segment.models import Segment as OvertureSegment
 
+from .client import OvertureClient
 from .exceptions import (
     OvertureConnectionError,
+    OvertureDataNotFoundError,
     OvertureError,
     OvertureNotFoundError,
     OvertureValidationError,
@@ -64,4 +65,5 @@ __all__ = [
     "OvertureConnectionError",
     "OvertureValidationError",
     "OvertureNotFoundError",
+    "OvertureDataNotFoundError",
 ]

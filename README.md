@@ -114,20 +114,20 @@ client = OvertureClient(
 
 ### Available methods
 
-| Method                                          | Return type                  |
-| ----------------------------------------------- | ---------------------------- |
-| `nearby_addresses(lat, lon)`                    | `list[NearbyAddressResult]`  |
-| `get_address_by_id(address_id)`                 | `OvertureAddress \| None`    |
-| `street_at_point(lat, lon)`                     | `StreetAtPointResult`        |
-| `streets_near_place(lat, lon)`                  | `list[NearbySegmentResult]`  |
-| `search_streets(q)`                             | `list[OvertureSegment]`      |
-| `get_segment_by_id(segment_id)`                 | `OvertureSegment \| None`    |
-| `nearby_places(lat, lon)`                       | `list[NearbyPlaceResult]`    |
-| `search_places(q)`                              | `list[OverturePlace]`        |
-| `divisions_containing_point(lat, lon)`          | `list[OvertureDivisionArea]` |
-| `search_divisions(q)`                           | `list[OvertureDivisionArea]` |
-| `streets_in_division(division_id, q)`           | `list[OvertureSegment]`      |
-| `health(config)`                                | `dict`                       |
+| Method                                 | Return type                  |
+| -------------------------------------- | ---------------------------- |
+| `nearby_addresses(lat, lon)`           | `list[NearbyAddressResult]`  |
+| `get_address_by_id(address_id)`        | `OvertureAddress \| None`    |
+| `street_at_point(lat, lon)`            | `StreetAtPointResult`        |
+| `streets_near_place(lat, lon)`         | `list[NearbySegmentResult]`  |
+| `search_streets(q)`                    | `list[OvertureSegment]`      |
+| `get_segment_by_id(segment_id)`        | `OvertureSegment \| None`    |
+| `nearby_places(lat, lon)`              | `list[NearbyPlaceResult]`    |
+| `search_places(q)`                     | `list[OverturePlace]`        |
+| `divisions_containing_point(lat, lon)` | `list[OvertureDivisionArea]` |
+| `search_divisions(q)`                  | `list[OvertureDivisionArea]` |
+| `streets_in_division(division_id, q)`  | `list[OvertureSegment]`      |
+| `health(config)`                       | `dict`                       |
 
 All methods accept an optional `limit: int = 10` parameter where applicable.
 

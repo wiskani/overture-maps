@@ -1,6 +1,9 @@
 """Configuration loader for overture-maps library.
 
-Priority order: environment variables > overture.yaml > ValueError.
+Priority order: environment variables > overture.yaml > defaults.
+
+Data directory resolution order:
+  OVERTURE_DATA_DIR env var > data_dir in overture.yaml > XDG user data dir.
 """
 
 from __future__ import annotations
@@ -12,6 +15,17 @@ from pathlib import Path
 import yaml
 
 _DEFAULT_CONFIG_PATH = Path.cwd() / "overture.yaml"
+
+
+def _default_data_dir() -> Path:
+    """Return the platform-appropriate user data directory for overture-maps.
+
+    Follows the XDG Base Directory Specification on Linux/macOS.
+    Respects XDG_DATA_HOME if set; otherwise falls back to ~/.local/share.
+    """
+    xdg = os.environ.get("XDG_DATA_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".local" / "share"
+    return base / "overture-maps"
 
 
 @dataclass
@@ -42,6 +56,7 @@ class Config:
     themes: list[str] = field(default_factory=list)
     db_url: str | None = None
     db_sync_url: str | None = None
+    data_dir: Path = field(default_factory=_default_data_dir)
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -99,6 +114,14 @@ def load_config(path: Path | None = None) -> Config:
         os.environ.get("OVERTURE_DB_SYNC_URL") or raw.get("db_sync_url") or None
     )
 
+    env_data_dir = os.environ.get("OVERTURE_DATA_DIR")
+    if env_data_dir:
+        data_dir = Path(env_data_dir)
+    elif raw.get("data_dir"):
+        data_dir = Path(raw["data_dir"])
+    else:
+        data_dir = _default_data_dir()
+
     return Config(
         city=city,
         bbox=bbox,
@@ -107,4 +130,5 @@ def load_config(path: Path | None = None) -> Config:
         themes=themes,
         db_url=db_url,
         db_sync_url=db_sync_url,
+        data_dir=data_dir,
     )

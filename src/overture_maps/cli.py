@@ -25,8 +25,6 @@ from .queries.streets import search_streets as _search_streets
 from .queries.streets import street_at_point as _street_at_point
 from .queries.streets import streets_near_place as _streets_near_place
 
-_DEFAULT_DATA_DIR = Path.cwd() / "data"
-
 
 def _get_dsn() -> str:
     dsn = os.environ.get("OVERTURE_DB_URL") or load_config().db_url
@@ -77,7 +75,15 @@ def _catch_errors():
 
 
 @click.command("overture-load")
-@click.option("--data-dir", default=str(_DEFAULT_DATA_DIR), show_default=True)
+@click.option(
+    "--data-dir",
+    default=None,
+    help=(
+        "Directory containing the downloaded .parquet files. "
+        "Defaults to OVERTURE_DATA_DIR env var, then data_dir in overture.yaml, "
+        "then ~/.local/share/overture-maps/."
+    ),
+)
 @click.option(
     "--dsn",
     default=None,
@@ -89,11 +95,31 @@ def _catch_errors():
     show_default=True,
     help="Recreate the reference schema before loading.",
 )
-def load(data_dir: str, dsn: str | None, init_schema: bool) -> None:
+def load(data_dir: str | None, dsn: str | None, init_schema: bool) -> None:
     """Load Overture Maps GeoParquet files into PostGIS."""
     sync_dsn = _get_sync_dsn(dsn)
     config = load_config()
-    _load(Path(data_dir), sync_dsn, config, init_schema=init_schema)
+    resolved_dir = Path(data_dir) if data_dir else config.data_dir
+
+    if not resolved_dir.exists() or not any(resolved_dir.glob("*.parquet")):
+        bbox = config.bbox.as_str()
+        raise click.ClickException(
+            f"No GeoParquet files found in: {resolved_dir}\n\n"
+            "Download the data first with the overturemaps CLI:\n\n"
+            f"  overturemaps download --bbox={bbox} --type=place "
+            f"-f geoparquet -o {resolved_dir}/places.parquet\n"
+            f"  overturemaps download --bbox={bbox} --type=address "
+            f"-f geoparquet -o {resolved_dir}/addresses.parquet\n"
+            f"  overturemaps download --bbox={bbox} --type=division_area "
+            f"-f geoparquet -o {resolved_dir}/divisions.parquet\n"
+            f"  overturemaps download --bbox={bbox} --type=segment "
+            f"-f geoparquet -o {resolved_dir}/segments.parquet\n"
+            f"  overturemaps download --bbox={bbox} --type=connector "
+            f"-f geoparquet -o {resolved_dir}/connectors.parquet\n\n"
+            "Or set a different directory with --data-dir or OVERTURE_DATA_DIR."
+        )
+
+    _load(resolved_dir, sync_dsn, config, init_schema=init_schema)
 
 
 @click.command("overture-nearby-addresses")
