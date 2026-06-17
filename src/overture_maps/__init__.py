@@ -8,6 +8,7 @@ from overture.schema.transportation.segment.models import Segment as OvertureSeg
 from .client import OvertureClient
 from .exceptions import (
     OvertureConnectionError,
+    OvertureCoverageError,
     OvertureDataNotFoundError,
     OvertureError,
     OvertureNotFoundError,
@@ -63,6 +64,7 @@ __all__ = [
     # exceptions
     "OvertureError",
     "OvertureConnectionError",
+    "OvertureCoverageError",
     "OvertureValidationError",
     "OvertureNotFoundError",
     "OvertureDataNotFoundError",

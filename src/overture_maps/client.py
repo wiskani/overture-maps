@@ -18,6 +18,7 @@ from overture.schema.transportation.segment.models import Segment as OvertureSeg
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from .config import Config
+from .exceptions import OvertureCoverageError
 from .queries.addresses import get_address_by_id as _get_address_by_id
 from .queries.addresses import nearby_addresses as _nearby_addresses
 from .queries.divisions import divisions_containing_point as _divisions_containing_point
@@ -53,6 +54,10 @@ class OvertureClient:
         pool_timeout: int = 10,
         pool_recycle: int = 1800,
         statement_timeout: int = 5000,
+        bbox_min_lon: float | None = None,
+        bbox_min_lat: float | None = None,
+        bbox_max_lon: float | None = None,
+        bbox_max_lat: float | None = None,
     ) -> None:
         engine = create_async_engine(
             dsn,
@@ -71,12 +76,29 @@ class OvertureClient:
             autocommit=False,
             expire_on_commit=False,
         )
+        bbox_params = (bbox_min_lon, bbox_min_lat, bbox_max_lon, bbox_max_lat)
+        all_set = all(v is not None for v in bbox_params)
+        self._bbox: tuple[float, float, float, float] | None = (
+            bbox_params if all_set else None  # type: ignore[assignment]
+        )
+
+    def _check_coverage(self, lat: float, lon: float) -> None:
+        """Raise OvertureCoverageError if the point is outside the configured bbox."""
+        if self._bbox is None:
+            return
+        min_lon, min_lat, max_lon, max_lat = self._bbox
+        if not (min_lon <= lon <= max_lon and min_lat <= lat <= max_lat):
+            raise OvertureCoverageError(
+                f"Point (lat={lat}, lon={lon}) is outside the configured coverage bbox "
+                f"({min_lon},{min_lat} → {max_lon},{max_lat})."
+            )
 
     # ── Addresses ────────────────────────────────────────────────────────
 
     async def nearby_addresses(
         self, lat: float, lon: float, limit: int = 10
     ) -> list[NearbyAddressResult]:
+        self._check_coverage(lat, lon)
         async with self._session_maker() as session:
             return await _nearby_addresses(session, lat, lon, limit)
 
@@ -87,12 +109,14 @@ class OvertureClient:
     # ── Streets ──────────────────────────────────────────────────────────
 
     async def street_at_point(self, lat: float, lon: float) -> StreetAtPointResult:
+        self._check_coverage(lat, lon)
         async with self._session_maker() as session:
             return await _street_at_point(session, lat, lon)
 
     async def streets_near_place(
         self, lat: float, lon: float, limit: int = 10
     ) -> list[NearbySegmentResult]:
+        self._check_coverage(lat, lon)
         async with self._session_maker() as session:
             return await _streets_near_place(session, lat, lon, limit)
 
@@ -109,6 +133,7 @@ class OvertureClient:
     async def nearby_places(
         self, lat: float, lon: float, limit: int = 10
     ) -> list[NearbyPlaceResult]:
+        self._check_coverage(lat, lon)
         async with self._session_maker() as session:
             return await _nearby_places(session, lat, lon, limit)
 

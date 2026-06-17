@@ -25,3 +25,7 @@ class OvertureNotFoundError(OvertureError):
 
 class OvertureDataNotFoundError(OvertureError):
     """Raised when the GeoParquet data directory is missing or empty."""
+
+
+class OvertureCoverageError(OvertureError):
+    """Raised when a query point falls outside the configured coverage bbox."""
